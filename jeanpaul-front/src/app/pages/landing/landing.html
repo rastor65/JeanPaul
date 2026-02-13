@@ -1,6 +1,6 @@
 <section class="page">
   <!-- HERO -->
-  <section class="hero">
+  <section class="hero" aria-labelledby="jp-hero-title">
     <div class="hero-bg" aria-hidden="true"></div>
 
     <div class="hero-inner">
@@ -13,7 +13,7 @@
           </div>
         </div>
 
-        <h1>
+        <h1 id="jp-hero-title">
           Tu mejor estilo,
           <span class="gold">en Jean Paul</span>
         </h1>
@@ -23,7 +23,39 @@
           Reserva tu turno en segundos con disponibilidad real por trabajador.
         </p>
 
-        <div class="bullets">
+        <div class="trust">
+          <div class="trust-item">
+            <span class="trust-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7v3a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7zm5 10a5 5 0 0 1-10 0V9a5 5 0 0 1 10 0v3zM11 6h2v6h-2V6zm0 8h2v2h-2v-2z"/></svg>
+            </span>
+            <div>
+              <strong>Sin filas</strong>
+              <span class="mini">Agenda organizada</span>
+            </div>
+          </div>
+
+          <div class="trust-item">
+            <span class="trust-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M3 7h18v2H3V7zm2 4h14v2H5v-2zm3 4h8v2H8v-2z"/></svg>
+            </span>
+            <div>
+              <strong>Duración automática</strong>
+              <span class="mini">Según servicios</span>
+            </div>
+          </div>
+
+          <div class="trust-item">
+            <span class="trust-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4zm3 7-4 4-2-2-1 1 3 3 5-5-1-1z"/></svg>
+            </span>
+            <div>
+              <strong>Confirmación</strong>
+              <span class="mini">Turno reservado</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bullets" aria-label="Beneficios">
           <div class="pill">
             <span class="dot"></span>
             Agenda organizada, sin filas
@@ -39,21 +71,20 @@
         </div>
 
         <div class="cta-row">
-          <!-- Este botón lo puedes enlazar a tu acción existente (abrir modal) desde el componente padre -->
           <button class="btn primary" type="button" (click)="openReserve()">
             Reservar turno
           </button>
 
-          <a class="btn ghost" href="/login">
+          <a class="btn ghost" href="#servicios">
+            Ver servicios
+          </a>
+
+          <a class="btn ghost" routerLink="/login">
             Ingreso staff
           </a>
         </div>
 
-        <p class="note">
-          Haz clic en <strong>“Reservar turno”</strong> para abrir el formulario de reserva.
-        </p>
-
-        <div class="stats">
+        <div class="stats" aria-label="Horarios base">
           <div class="stat">
             <div class="stat-val">8:00</div>
             <div class="stat-lbl">Apertura</div>
@@ -112,14 +143,14 @@
                 <span class="n">2</span>
                 <div>
                   <strong>Selecciona trabajador</strong>
-                  <span class="mini">Próximo disponible o barbero específico</span>
+                  <span class="mini">Próximo disponible o específico</span>
                 </div>
               </div>
               <div class="step">
                 <span class="n">3</span>
                 <div>
                   <strong>Escoge la mejor hora</strong>
-                  <span class="mini">Opciones reales según disponibilidad</span>
+                  <span class="mini">Solo opciones posibles</span>
                 </div>
               </div>
             </div>
@@ -138,15 +169,17 @@
   </section>
 
   <!-- SERVICES -->
-  <section class="services">
+  <section class="services" id="servicios" aria-labelledby="jp-services-title">
     <div class="section-title">
-      <h2>Servicios</h2>
+      <h2 id="jp-services-title">Servicios</h2>
       <p>Calidad, precisión y experiencia en cada detalle.</p>
     </div>
 
     <div class="grid">
       <div class="item">
-        <div class="icon" aria-hidden="true">✂</div>
+        <div class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 20l6-6 2 2-6 6H4zm8.2-8.2 6.9-6.9 1.4 1.4-6.9 6.9-1.4-1.4zM14 6l2 2-1 1-2-2 1-1z"/></svg>
+        </div>
         <h4>Cortes y estilo</h4>
         <p>Clásico, fade, barbería moderna y asesoría rápida.</p>
         <div class="item-foot">
@@ -157,7 +190,9 @@
       </div>
 
       <div class="item">
-        <div class="icon" aria-hidden="true">🧔</div>
+        <div class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 2a6 6 0 0 1 6 6v3a6 6 0 0 1-12 0V8a6 6 0 0 1 6-6zm-5 18c0-3 2-5 5-5s5 2 5 5H7z"/></svg>
+        </div>
         <h4>Barba y cejas</h4>
         <p>Perfilado, limpieza, diseño y retoques finos.</p>
         <div class="item-foot">
@@ -168,7 +203,9 @@
       </div>
 
       <div class="item">
-        <div class="icon" aria-hidden="true">✨</div>
+        <div class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 2l4 6-4 2-4-2 4-6zm-7 9h14l-2 11H7L5 11zm5 2v7h2v-7H10zm4 0v7h2v-7h-2z"/></svg>
+        </div>
         <h4>Uñas y facial</h4>
         <p>Arreglo de uñas y limpieza facial con personal fijo.</p>
         <div class="item-foot">
@@ -180,8 +217,46 @@
     </div>
   </section>
 
-  <!-- Sticky CTA (solo visual; si ya tienes tu botón arriba puedes dejarlo) -->
-  <div class="sticky-cta">
+  <!-- FAQ -->
+  <section class="faq" aria-labelledby="jp-faq-title">
+    <div class="section-title">
+      <h2 id="jp-faq-title">Preguntas frecuentes</h2>
+      <p>Resuelve dudas rápidas antes de reservar.</p>
+    </div>
+
+    <div class="faq-grid">
+      <details class="qa">
+        <summary>¿Puedo elegir un trabajador específico?</summary>
+        <div class="ans">
+          Sí. Puedes seleccionar un trabajador o elegir la opción de próximo disponible (para barberos).
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>¿Qué pasa si elijo varios servicios?</summary>
+        <div class="ans">
+          El sistema suma la duración total y solo te muestra horarios que realmente alcanzan.
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>¿Cómo funciona el beneficio de cumpleaños?</summary>
+        <div class="ans">
+          Aplica a clientes frecuentes si tu fecha de nacimiento coincide con el día de la cita, según configuración de la barbería.
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>¿Domingos y festivos están disponibles?</summary>
+        <div class="ans">
+          Depende de disponibilidad. En caso de apertura, el sistema te mostrará los turnos habilitados.
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- Sticky CTA -->
+  <div class="sticky-cta" [class.is-hidden]="(reserveOpen$ | async)">
     <div class="sticky-inner">
       <div class="sticky-text">
         <strong>¿Listo para tu turno?</strong>
@@ -193,8 +268,3 @@
     </div>
   </div>
 </section>
-
-<app-reserve-modal
-  [open]="reserveOpen"
-  (closed)="closeReserve()">
-</app-reserve-modal>

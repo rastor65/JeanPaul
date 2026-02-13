@@ -1,6 +1,8 @@
-<header class="topbar">
+<a class="skip" href="#main">Saltar al contenido</a>
+
+<header class="topbar" role="banner">
   <div class="topbar__inner">
-    <a class="brand" routerLink="/">
+    <a class="brand" routerLink="/" aria-label="Ir al inicio">
       <span class="brand__mark" aria-hidden="true">JP</span>
       <span class="brand__text">
         <strong class="brand__name">Barbería Jean Paul</strong>
@@ -8,7 +10,7 @@
       </span>
     </a>
 
-    <nav class="actions">
+    <nav class="actions" aria-label="Acciones">
       <button class="btn btn--gold" type="button" (click)="openReserve()">
         Reservar turno
       </button>
@@ -20,13 +22,13 @@
   </div>
 </header>
 
-<main class="content">
+<main id="main" class="content" role="main">
   <div class="content__inner">
     <router-outlet></router-outlet>
   </div>
 </main>
 
-<footer class="footer">
+<footer class="footer" role="contentinfo">
   <div class="footer__inner">
     <span>© {{ year }} Barbería Jean Paul</span>
     <span class="footer__sep">•</span>
@@ -34,8 +36,9 @@
   </div>
 </footer>
 
+<!-- Modal único para todo el público -->
 <app-reserve-modal
-  [open]="showReserve"
+  [open]="(showReserve$ | async) ?? false"
   (closed)="closeReserve()">
 </app-reserve-modal>
 

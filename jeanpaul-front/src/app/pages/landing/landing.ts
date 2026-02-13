@@ -1,22 +1,23 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReserveModalComponent } from '../../shared/reserve-modal/reserve-modal';
+import { RouterLink } from '@angular/router';
+import { Observable } from 'rxjs';
+import { ReserveUiService } from '../../shared/reserve-ui.service';
 
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [CommonModule, ReserveModalComponent],
+  imports: [CommonModule, RouterLink],
   templateUrl: './landing.html',
   styleUrl: './landing.scss',
 })
 export class LandingComponent {
-  reserveOpen = false;
+  private reserveUi = inject(ReserveUiService);
+
+  // Para ocultar el sticky CTA cuando el modal está abierto
+  reserveOpen$: Observable<boolean> = this.reserveUi.open$;
 
   openReserve(): void {
-    this.reserveOpen = true;
-  }
-
-  closeReserve(): void {
-    this.reserveOpen = false;
+    this.reserveUi.open();
   }
 }

@@ -1,8 +1,11 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterOutlet } from '@angular/router';
+import { Observable } from 'rxjs';
+
 import { ReserveModalComponent } from '../../shared/reserve-modal/reserve-modal';
 import { ToastComponent } from '../../shared/toast/toast.component';
+import { ReserveUiService } from '../../shared/reserve-ui.service';
 
 @Component({
   selector: 'app-public-shell',
@@ -12,9 +15,11 @@ import { ToastComponent } from '../../shared/toast/toast.component';
   styleUrl: './public-shell.scss'
 })
 export class PublicShellComponent {
-  year = new Date().getFullYear();
-  showReserve = false;
+  private reserveUi = inject(ReserveUiService);
 
-  openReserve() { this.showReserve = true; }
-  closeReserve() { this.showReserve = false; }
+  year = new Date().getFullYear();
+  showReserve$: Observable<boolean> = this.reserveUi.open$;
+
+  openReserve() { this.reserveUi.open(); }
+  closeReserve() { this.reserveUi.close(); }
 }
