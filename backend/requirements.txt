@@ -1,0 +1,49 @@
+# =========================
+# Core (Django + API)
+# =========================
+Django>=5.0,<5.2
+djangorestframework>=3.15,<3.16
+django-filter>=24.2,<25.0
+
+# =========================
+# Auth (JWT)
+# =========================
+djangorestframework-simplejwt>=5.3,<5.4
+
+# =========================
+# CORS (Angular)
+# =========================
+django-cors-headers>=4.4,<4.6
+
+# =========================
+# OpenAPI / Swagger
+# =========================
+drf-spectacular>=0.27,<0.29
+
+# =========================
+# Producción (Railway)
+# =========================
+gunicorn>=22.0,<23.0
+whitenoise>=6.7,<7.0
+dj-database-url>=2.2,<2.3
+python-dotenv>=1.0,<1.1
+
+# =========================
+# DB Driver
+# =========================
+# Recomendado en Railway (PostgreSQL)
+psycopg[binary]>=3.2,<3.3
+
+# Si usas MySQL en vez de PostgreSQL, comenta psycopg y usa esto:
+# mysqlclient>=2.2,<2.3
+
+# =========================
+# Utils (fechas, zonas horarias)
+# =========================
+python-dateutil>=2.9,<3.0
+tzdata>=2024.1
+
+# =========================
+# Media (si manejas imágenes / avatars)
+# =========================
+Pillow>=10.4,<11.0
