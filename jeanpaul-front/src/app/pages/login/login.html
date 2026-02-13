@@ -1,0 +1,238 @@
+<div class="login">
+  <!-- Background -->
+  <div class="bg" aria-hidden="true">
+    <div class="orb orb--1"></div>
+    <div class="orb orb--2"></div>
+    <div class="orb orb--3"></div>
+    <div class="grid"></div>
+    <div class="noise"></div>
+  </div>
+
+  <!-- Card -->
+  <div class="card" role="region" aria-label="Ingreso al sistema">
+    <!-- Brand side -->
+    <aside class="brand">
+      <div class="brand__top">
+        <div class="logo" aria-hidden="true">
+          <span>JP</span>
+        </div>
+
+        <div class="brand__txt">
+          <h1>Barbería Jean Paul</h1>
+          <p>Centro de control operativo</p>
+        </div>
+      </div>
+
+      <div class="brand__divider" aria-hidden="true"></div>
+
+      <div class="brand__value">
+        <h2>Panel administrativo</h2>
+        <p>
+          Accede para gestionar turnos, catálogo, agenda, usuarios y operación diaria con control total.
+        </p>
+      </div>
+
+      <ul class="brand__list" aria-label="Beneficios">
+        <li>
+          <span class="ic" aria-hidden="true">
+            <!-- calendar -->
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M8 3v3M16 3v3M4.5 8.5h15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M6.5 21h11A2.5 2.5 0 0 0 20 18.5V8.5A2.5 2.5 0 0 0 17.5 6h-11A2.5 2.5 0 0 0 4 8.5v10A2.5 2.5 0 0 0 6.5 21Z" stroke="currentColor" stroke-width="1.8"/>
+            </svg>
+          </span>
+          <div>
+            <strong>Agenda centralizada</strong>
+            <small>Turnos por fecha, estado, trabajador y búsqueda rápida.</small>
+          </div>
+        </li>
+
+        <li>
+          <span class="ic" aria-hidden="true">
+            <!-- bolt -->
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M13 2 4 14h7l-1 8 10-14h-7l0-6Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <div>
+            <strong>Operación en tiempo real</strong>
+            <small>Acciones rápidas: atender, cancelar, no-show, registrar pago.</small>
+          </div>
+        </li>
+
+        <li>
+          <span class="ic" aria-hidden="true">
+            <!-- shield -->
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3 20 7v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V7l8-4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="m9.5 12 1.8 1.8 3.8-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <div>
+            <strong>Acceso seguro</strong>
+            <small>Sesión protegida por cookie HttpOnly y permisos staff/admin.</small>
+          </div>
+        </li>
+      </ul>
+
+      <div class="brand__footer">
+        <span>© {{ year }} Jean Paul</span>
+        <span class="dot" aria-hidden="true"></span>
+        <span>Staff</span>
+      </div>
+    </aside>
+
+    <!-- Form side -->
+    <main class="pane">
+      <header class="pane__head">
+        <div class="pane__title">
+          <h2>Iniciar sesión</h2>
+          <p>Ingresa tus credenciales para continuar al panel.</p>
+        </div>
+
+        <!-- Opcional: estado API -->
+        <div class="status" *ngIf="showApiStatus">
+          <span class="status__pill" [class.ok]="apiOk" [class.bad]="!apiOk">
+            <span class="led" aria-hidden="true"></span>
+            {{ apiOk ? 'API disponible' : 'API sin conexión' }}
+          </span>
+        </div>
+      </header>
+
+      <form class="form" (ngSubmit)="onSubmit()" autocomplete="on">
+        <!-- Identifier -->
+        <div class="field">
+          <label for="identifier">Usuario / Teléfono / Email</label>
+          <div class="control" [class.invalid]="errorMsg">
+            <span class="icon" aria-hidden="true">
+              <!-- user -->
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M20 21a8 8 0 0 0-16 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M12 12a4.2 4.2 0 1 0-4.2-4.2A4.2 4.2 0 0 0 12 12Z" stroke="currentColor" stroke-width="1.8"/>
+              </svg>
+            </span>
+
+            <input
+              id="identifier"
+              [(ngModel)]="identifier"
+              name="identifier"
+              required
+              autocomplete="username"
+              placeholder="admin | 3001234567 | correo@dominio.com"
+              (keydown)="onCapsCheck($event)"
+            />
+          </div>
+          <small class="hint">Puedes usar usuario, teléfono o correo.</small>
+        </div>
+
+        <!-- Password -->
+        <div class="field">
+          <label for="password">Contraseña</label>
+
+          <div class="control control--pw" [class.invalid]="errorMsg">
+            <span class="icon" aria-hidden="true">
+              <!-- lock -->
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M7.5 11V8.2A4.5 4.5 0 0 1 12 3.7a4.5 4.5 0 0 1 4.5 4.5V11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M7 21h10a2.5 2.5 0 0 0 2.5-2.5v-5A2.5 2.5 0 0 0 17 11H7a2.5 2.5 0 0 0-2.5 2.5v5A2.5 2.5 0 0 0 7 21Z" stroke="currentColor" stroke-width="1.8"/>
+              </svg>
+            </span>
+
+            <input
+              id="password"
+              [(ngModel)]="password"
+              name="password"
+              [type]="showPassword ? 'text' : 'password'"
+              required
+              autocomplete="current-password"
+              placeholder="••••••••"
+              (keydown)="onCapsCheck($event)"
+            />
+
+            <button
+              type="button"
+              class="pwToggle"
+              (click)="togglePassword()"
+              [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              [attr.aria-pressed]="showPassword"
+            >
+              <span class="pwToggle__icon" aria-hidden="true">
+                <!-- eye -->
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M2.5 12s3.4-7 9.5-7 9.5 7 9.5 7-3.4 7-9.5 7-9.5-7-9.5-7Z" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="M12 15.2A3.2 3.2 0 1 0 12 8.8a3.2 3.2 0 0 0 0 6.4Z" stroke="currentColor" stroke-width="1.8"/>
+                </svg>
+              </span>
+            </button>
+          </div>
+
+          <div class="caps" *ngIf="capsLockOn">
+            Bloq Mayús activado. Verifica la contraseña.
+          </div>
+        </div>
+
+        <!-- Options row -->
+        <div class="row">
+          <label class="check">
+            <input type="checkbox" [(ngModel)]="rememberMe" name="rememberMe" />
+            <span class="check__box" aria-hidden="true"></span>
+            <span>Recordarme</span>
+          </label>
+
+          <button type="button" class="link" (click)="openHelp()">
+            ¿Olvidaste tu acceso?
+          </button>
+        </div>
+
+        <!-- Submit -->
+        <button class="btn" type="submit" [disabled]="loading">
+          <span class="btn__inner">
+            <span class="spinner" *ngIf="loading" aria-hidden="true"></span>
+            <span>{{ loading ? 'Ingresando...' : 'Entrar al panel' }}</span>
+          </span>
+          <span class="btn__glow" aria-hidden="true"></span>
+        </button>
+
+        <!-- Error -->
+        <div class="alert" *ngIf="errorMsg" role="alert">
+          <div class="alert__title">No se pudo iniciar sesión</div>
+          <div class="alert__msg">{{ errorMsg }}</div>
+        </div>
+
+        <footer class="foot">
+          <span>Soporte:</span>
+          <span class="muted">comunícate con administración si no tienes credenciales.</span>
+        </footer>
+      </form>
+    </main>
+  </div>
+
+  <!-- Help modal -->
+  <div class="overlay" *ngIf="helpOpen" (click)="closeHelp()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal__head">
+        <strong>Recuperación de acceso</strong>
+        <button type="button" class="x" (click)="closeHelp()">×</button>
+      </div>
+      <div class="modal__body">
+        <p class="muted">
+          Por seguridad, la recuperación se gestiona con administración.
+          Si necesitas acceso, envía tu nombre y rol (staff/worker/admin).
+        </p>
+
+        <div class="helpBox">
+          <div class="helpBox__k">Qué enviar</div>
+          <ul>
+            <li>Nombre completo</li>
+            <li>Usuario o teléfono registrado</li>
+            <li>Rol requerido</li>
+          </ul>
+        </div>
+
+        <div class="modal__actions">
+          <button type="button" class="btn2" (click)="closeHelp()">Entendido</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

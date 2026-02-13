@@ -1,0 +1,309 @@
+<div class="overlay" *ngIf="open" (click)="close()">
+  <div class="modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+
+    <div class="head">
+      <div class="head-left">
+        <div class="kicker">Jean Paul Barbería</div>
+        <h2>Reservar turno</h2>
+        <p class="subtitle">Selecciona servicios, consulta disponibilidad y confirma tu reserva.</p>
+      </div>
+
+      <button class="icon-btn" type="button" (click)="close()" aria-label="Cerrar">✕</button>
+    </div>
+
+    <div class="body">
+      <div class="alert ok" *ngIf="msg">
+        <span class="dot"></span>
+        <div class="alert-text">{{ msg }}</div>
+      </div>
+
+      <div class="alert bad" *ngIf="err">
+        <span class="dot"></span>
+        <div class="alert-text">{{ err }}</div>
+      </div>
+
+      <div class="stepper">
+        <div class="step" [class.on]="true" [class.done]="hasName">
+          <span class="step-n">1</span>
+          <span class="step-t">Cliente</span>
+        </div>
+        <div class="step" [class.on]="selectedServiceIds.length > 0" [class.done]="selectedServiceIds.length > 0">
+          <span class="step-n">2</span>
+          <span class="step-t">Servicios</span>
+        </div>
+        <div class="step" [class.on]="hasBarberServices" [class.done]="!hasBarberServices || barberChoice === 'NEAREST' || !!barberId">
+          <span class="step-n">3</span>
+          <span class="step-t">Trabajador</span>
+        </div>
+        <div class="step" [class.on]="!!date" [class.done]="!!selectedOptionId">
+          <span class="step-n">4</span>
+          <span class="step-t">Disponibilidad</span>
+        </div>
+      </div>
+
+      <!-- 1. Cliente -->
+      <section class="section">
+        <div class="section-head">
+          <div class="section-title">
+            <span class="badge">1</span>
+            <div>
+              <div class="title">Datos del cliente</div>
+              <div class="meta">{{ customerType === 'FREQUENT' ? 'Cliente frecuente' : 'Cliente casual' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Tipo de cliente</label>
+            <select [(ngModel)]="customerType" name="customerType" (ngModelChange)="onCustomerTypeChange()">
+              <option value="CASUAL">Casual</option>
+              <option value="FREQUENT">Frecuente</option>
+            </select>
+            <small class="hint" *ngIf="customerType === 'FREQUENT'">
+              Validaremos teléfono y fecha de nacimiento. Si no coinciden, debes acercarte a recepción para registrarte.
+            </small>
+          </div>
+
+          <div class="field">
+            <label>Nombre</label>
+            <input [(ngModel)]="name" name="name" placeholder="Ej. Juan Pérez" autocomplete="name" />
+          </div>
+
+          <div class="field" *ngIf="customerType === 'FREQUENT'">
+            <label>Teléfono</label>
+            <input [(ngModel)]="phone" name="phone" placeholder="Ej. 3001234567" inputmode="tel" autocomplete="tel" />
+          </div>
+
+          <div class="field" *ngIf="customerType === 'FREQUENT'">
+            <label>Fecha de nacimiento</label>
+            <input type="date" [(ngModel)]="birth_date" name="birth_date" />
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Servicios -->
+      <section class="section">
+        <div class="section-head">
+          <div class="section-title">
+            <span class="badge">2</span>
+            <div>
+              <div class="title">Servicios</div>
+              <div class="meta">{{ selectedServiceIds.length }} seleccionado(s)</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="categories">
+          <div class="cat" *ngFor="let cat of groupedServices; trackBy: trackByCat">
+            <div class="cat-head">
+              <div class="cat-title">{{ cat.name }}</div>
+              <div class="cat-meta">{{ cat.services.length }}</div>
+            </div>
+
+            <div class="services-grid">
+              <button
+                class="card"
+                type="button"
+                *ngFor="let s of cat.services; trackBy: trackBySvc"
+                [class.active]="isSelectedService(s.id)"
+                (click)="toggleService(s.id)">
+
+                <div class="card-check" aria-hidden="true">
+                  <span *ngIf="isSelectedService(s.id)">✓</span>
+                </div>
+
+                <div class="card-top">
+                  <strong class="card-title">{{ s.name }}</strong>
+                  <span class="pill">{{ s.duration_minutes }} min</span>
+                </div>
+
+                <div class="card-sub">
+                  <span class="muted">{{ categoryName(s) }}</span>
+                  <span class="muted" *ngIf="bufferTotal(s) > 0">
+                    +{{ bufferTotal(s) }} min buffer
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="helper-row" *ngIf="selectedServiceIds.length === 0">
+          <div class="note subtle">Selecciona tus servicios y luego consulta disponibilidad.</div>
+        </div>
+      </section>
+
+      <!-- 3. Trabajador -->
+      <section class="section" [class.dim]="!hasBarberServices">
+        <div class="section-head">
+          <div class="section-title">
+            <span class="badge">3</span>
+            <div>
+              <div class="title">Trabajador</div>
+              <div class="meta">
+                <ng-container *ngIf="hasBarberServices; else autoAssign">
+                  {{ barberChoice === 'NEAREST' ? 'Próximo disponible' : 'Barbero específico' }}
+                </ng-container>
+                <ng-template #autoAssign>Automático</ng-template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="hasBarberServices" class="grid">
+          <div class="field">
+            <label>Preferencia</label>
+            <div class="segmented">
+              <button type="button" class="seg-btn" [class.on]="barberChoice === 'NEAREST'" (click)="setBarberChoice('NEAREST')">
+                Próximo disponible
+              </button>
+
+              <button type="button" class="seg-btn" [class.on]="barberChoice === 'SPECIFIC'" (click)="setBarberChoice('SPECIFIC')">
+                Elegir barbero
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Barbero</label>
+            <select [(ngModel)]="barberId" name="barberId" [disabled]="barberChoice !== 'SPECIFIC'" (change)="onBarberChange()">
+              <option [ngValue]="null">Seleccione...</option>
+              <option *ngFor="let b of barbers" [ngValue]="workerId(b)">{{ barberLabel(b) }}</option>
+            </select>
+            <small class="hint" *ngIf="barberChoice === 'SPECIFIC' && !barberId">
+              Selecciona un barbero para ver sus horarios disponibles.
+            </small>
+          </div>
+
+          <div class="field full" *ngIf="hasNailsOrFacial">
+            <div class="note">Uñas y facial se asignan automáticamente al trabajador fijo correspondiente.</div>
+          </div>
+        </div>
+
+        <div *ngIf="!hasBarberServices" class="note subtle">
+          No seleccionaste servicios de barbería. El trabajador se asigna automáticamente según el servicio.
+        </div>
+      </section>
+
+      <!-- 4. Fecha y disponibilidad -->
+      <section class="section">
+        <div class="section-head">
+          <div class="section-title">
+            <span class="badge">4</span>
+            <div>
+              <div class="title">Fecha y disponibilidad</div>
+              <div class="meta">{{ date || 'Selecciona una fecha' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Fecha</label>
+            <input type="date" [(ngModel)]="date" name="date" [min]="minDate" (change)="onDateChange()" />
+          </div>
+
+          <div class="field">
+            <label>&nbsp;</label>
+            <button class="btn primary" type="button" (click)="loadAvailability()" [disabled]="loadingAvailability">
+              <span class="spinner" *ngIf="loadingAvailability" aria-hidden="true"></span>
+              {{ loadingAvailability ? 'Consultando...' : 'Consultar disponibilidad' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="empty ok" *ngIf="!loadingAvailability && options.length > 0">
+          Se encontraron <strong>{{ options.length }}</strong> opciones. Filtra y selecciona una para confirmar.
+        </div>
+
+        <!-- Toolbar filtros -->
+        <div class="slots-toolbar" *ngIf="options.length > 0" #slotsEl>
+          <div class="search">
+            <input
+              [(ngModel)]="slotSearch"
+              name="slotSearch"
+              placeholder="Buscar por hora, barbero o servicio (ej. 3:00, Juan, manicure)"
+              autocomplete="off" />
+          </div>
+
+          <div class="chips">
+            <button type="button" class="chip-btn" [class.on]="slotPeriod==='ALL'" (click)="setSlotPeriod('ALL')">Todas</button>
+            <button type="button" class="chip-btn" [class.on]="slotPeriod==='AM'" (click)="setSlotPeriod('AM')">Mañana</button>
+            <button type="button" class="chip-btn" [class.on]="slotPeriod==='PM'" (click)="setSlotPeriod('PM')">Tarde</button>
+          </div>
+        </div>
+
+        <div class="slots" *ngIf="filteredOptions.length > 0">
+          <button
+            class="slot"
+            type="button"
+            *ngFor="let opt of filteredOptions; trackBy: trackByOpt"
+            [class.active]="selectedOptionId === optionId(opt)"
+            (click)="selectOption(optionId(opt))">
+
+            <div class="slot-top">
+              <div class="slot-time">
+                <strong>{{ fmtRange(opt) }}</strong>
+
+                <span class="pill subtle" *ngIf="barberWorkerIdForOption(opt) as wid">
+                  {{ barberNameById(wid) }}
+                </span>
+              </div>
+
+              <div class="slot-pick" aria-hidden="true">
+                <span *ngIf="selectedOptionId === optionId(opt)">✓</span>
+              </div>
+            </div>
+
+            <div class="slot-sub">
+              <span class="muted">{{ optionServicesLabel(opt) }}</span>
+            </div>
+
+            <!-- FIX: detalles solo si está seleccionada (reduce MUCHO el render) -->
+            <div class="slot-more muted" *ngIf="selectedOptionId !== optionId(opt)">
+              Selecciona para ver el detalle
+            </div>
+
+            <div class="slot-blocks" *ngIf="selectedOptionId === optionId(opt)">
+              <div class="b" *ngFor="let b of getBlocks(opt); trackBy: trackByBlock">
+                <div class="b-left">
+                  <div class="b-time">{{ fmtTime(b.start) }} - {{ fmtTime(b.end) }}</div>
+                  <div class="b-svcs">
+                    <ng-container *ngIf="b.services?.length; else idsOnly">
+                      <span *ngFor="let s of b.services; let last = last">
+                        {{ s.name }}<span *ngIf="!last"> · </span>
+                      </span>
+                    </ng-container>
+                    <ng-template #idsOnly>
+                      <span class="muted">Servicios: {{ b.service_ids?.length || 0 }}</span>
+                    </ng-template>
+                  </div>
+                </div>
+                <div class="b-right">
+                  <span class="pill subtle">Worker #{{ b.worker_id }}</span>
+                </div>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div class="empty" *ngIf="options.length > 0 && filteredOptions.length === 0 && !loadingAvailability">
+          No hay resultados con los filtros aplicados.
+        </div>
+
+        <div class="empty" *ngIf="options.length === 0 && !loadingAvailability && date && selectedServiceIds.length > 0">
+          No hay opciones disponibles para esa fecha con los servicios seleccionados.
+        </div>
+      </section>
+    </div>
+
+    <div class="foot">
+      <button class="btn ghost" type="button" (click)="close()">Cerrar</button>
+      <button class="btn primary" type="button" (click)="submit()" [disabled]="loading">
+        <span class="spinner" *ngIf="loading" aria-hidden="true"></span>
+        {{ loading ? 'Procesando...' : 'Confirmar reserva' }}
+      </button>
+    </div>
+  </div>
+</div>

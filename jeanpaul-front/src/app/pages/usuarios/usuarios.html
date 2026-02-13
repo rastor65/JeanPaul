@@ -1,0 +1,398 @@
+<section class="page">
+  <header class="top">
+    <div class="title">
+      <div class="mark" aria-hidden="true">JP</div>
+      <div class="title__text">
+        <h1>Usuarios</h1>
+        <p>Gestiona el personal (trabajador + cuenta) y clientes.</p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="search">
+        <span class="search__icon" aria-hidden="true">⌕</span>
+        <input
+          class="search__input"
+          type="search"
+          placeholder="Buscar por nombre, usuario, email o teléfono…"
+          [value]="q()"
+          (input)="setQ(($any($event.target)).value)"
+        />
+        <button class="search__clear" type="button" *ngIf="q()" (click)="setQ('')">×</button>
+      </div>
+
+      <button class="btn btn--ghost" type="button" (click)="clearFilters()" [disabled]="loading()">Limpiar</button>
+      <button class="btn btn--primary" type="button" (click)="refreshAll()" [disabled]="loading()">
+        {{ loading() ? 'Cargando…' : 'Actualizar' }}
+      </button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab" [class.on]="tab()==='STAFF'" type="button" (click)="setTab('STAFF')">Personal</button>
+    <button class="tab" [class.on]="tab()==='CUSTOMERS'" type="button" (click)="setTab('CUSTOMERS')">Clientes</button>
+
+    <div class="spacer"></div>
+
+    <button class="btn btn--primary" *ngIf="tab()==='STAFF'" type="button" (click)="openNewStaff()">Nuevo trabajador</button>
+    <button class="btn btn--primary" *ngIf="tab()==='CUSTOMERS'" type="button" (click)="openNewCustomer()">Nuevo cliente</button>
+  </div>
+
+  <div class="alert" *ngIf="error()">
+    <strong>Atención:</strong> {{ error() }}
+  </div>
+
+  <!-- PERSONAL -->
+  <section class="panel" *ngIf="tab()==='STAFF'">
+    <div class="panel__head">
+      <div>
+        <h2>Personal</h2>
+        <p class="muted">
+          Total: {{ staffStats().total }} • Activos: {{ staffStats().activos }} • Sin cuenta: {{ staffStats().sinCuenta }} • Con panel: {{ staffStats().conPanel }}
+        </p>
+      </div>
+
+      <div class="filters">
+        <select class="sel" [value]="staffRole()" (change)="staffRole.set(($any($event.target)).value)">
+          <option value="ALL">Todos los roles</option>
+          <option value="BARBER">Barbero</option>
+          <option value="NAILS">Uñas</option>
+          <option value="FACIAL">Facial</option>
+        </select>
+
+        <select class="sel" [value]="staffShow()" (change)="staffShow.set(($any($event.target)).value)">
+          <option value="ALL">Todos</option>
+          <option value="ACTIVE">Activos</option>
+          <option value="INACTIVE">Inactivos</option>
+          <option value="NO_ACCOUNT">Sin cuenta</option>
+        </select>
+
+        <select class="sel" [value]="staffPanel()" (change)="staffPanel.set(($any($event.target)).value)">
+          <option value="ALL">Panel: Todos</option>
+          <option value="PANEL">Con acceso</option>
+          <option value="NO_PANEL">Sin acceso</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tableWrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Activo</th>
+            <th>Trabajador</th>
+            <th>Rol</th>
+            <th>Cuenta</th>
+            <th>Administrador</th>
+            <th class="right">Acciones</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr *ngFor="let r of filteredStaff()">
+            <td>
+              <label class="switch">
+                <input type="checkbox" [checked]="r.active" (change)="toggleStaffActive(r)" />
+                <span></span>
+              </label>
+            </td>
+
+            <td>
+              <strong>{{ r.worker.display_name }}</strong>
+              <div class="sub" [class.warn]="!r.hasAccount">
+                {{ r.displayContact }}
+              </div>
+            </td>
+
+            <td>
+              <span class="pill">{{ r.roleLabel }}</span>
+            </td>
+
+            <td>
+              <span class="status" [class.bad]="!r.hasAccount" [class.ok]="r.hasAccount">
+                {{ r.hasAccount ? 'Vinculada' : 'Sin cuenta' }}
+              </span>
+            </td>
+
+            <td>
+              <span class="status" [class.ok]="r.panelAccess" [class.neutral]="r.hasAccount && !r.panelAccess" [class.bad]="!r.hasAccount">
+                {{ r.hasAccount ? (r.panelAccess ? 'Sí' : 'No') : '—' }}
+              </span>
+            </td>
+
+            <td class="right">
+              <button class="mini" type="button" (click)="openEditStaff(r)">Editar</button>
+              <button class="mini" type="button" (click)="resetPasswordFromRow(r)" [disabled]="!r.user">Restablecer clave</button>
+            </td>
+          </tr>
+
+          <tr *ngIf="!loading() && filteredStaff().length===0">
+            <td colspan="6" class="empty">No hay resultados con los filtros actuales.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <details class="orphan" *ngIf="unlinkedUsers().length > 0">
+      <summary>Cuentas sin trabajador ({{ unlinkedUsers().length }})</summary>
+      <div class="orphan__body">
+        <div class="muted">Si por alguna razón tienes cuentas creadas sin trabajador, aquí las puedes identificar para vincularlas.</div>
+
+        <div class="tableWrap">
+          <table class="tbl small">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Usuario</th>
+                <th>Email</th>
+                <th>Panel</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let u of unlinkedUsers()">
+                <td>{{ u.id }}</td>
+                <td><strong>{{ u.username }}</strong></td>
+                <td>{{ u.email || '—' }}</td>
+                <td>{{ u.is_staff ? 'Sí' : 'No' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- CLIENTES -->
+  <section class="panel" *ngIf="tab()==='CUSTOMERS'">
+    <div class="panel__head">
+      <div>
+        <h2>Clientes</h2>
+        <p class="muted">Registra clientes casuales o frecuentes.</p>
+      </div>
+
+      <div class="filters">
+        <select class="sel" [value]="customerType()" (change)="customerType.set(($any($event.target)).value)">
+          <option value="ALL">Todos los tipos</option>
+          <option value="CASUAL">Casual</option>
+          <option value="FREQUENT">Frecuente</option>
+        </select>
+
+        <select class="sel" [value]="customerShow()" (change)="customerShow.set(($any($event.target)).value)">
+          <option value="ALL">Todos</option>
+          <option value="ACTIVE">Activos</option>
+          <option value="INACTIVE">Inactivos</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tableWrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Tipo</th>
+            <th>Teléfono</th>
+            <th>Nacimiento</th>
+            <th>Activo</th>
+            <th class="right">Acciones</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr *ngFor="let c of filteredCustomers()">
+            <td>{{ c.id }}</td>
+            <td><strong>{{ c.name }}</strong></td>
+            <td>{{ customerTypeLabel(c.customer_type) }}</td>
+            <td>{{ c.phone || '—' }}</td>
+            <td>{{ c.birth_date || '—' }}</td>
+            <td>{{ (c.active ?? true) ? 'Sí' : 'No' }}</td>
+            <td class="right">
+              <button class="mini" type="button" (click)="openEditCustomer(c)">Editar</button>
+            </td>
+          </tr>
+
+          <tr *ngIf="!loading() && filteredCustomers().length===0">
+            <td colspan="7" class="empty">No hay resultados con los filtros actuales.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- MODAL -->
+  <div class="overlay" *ngIf="modalOpen()">
+    <div class="modal">
+      <div class="modal__head">
+        <div>
+          <strong *ngIf="modalKind()==='STAFF'">
+            {{ editingWorkerId() ? 'Editar trabajador' : 'Nuevo trabajador' }}
+          </strong>
+          <strong *ngIf="modalKind()==='CUSTOMER'">
+            {{ editingWorkerId() ? 'Editar cliente' : 'Nuevo cliente' }}
+          </strong>
+          <div class="muted" *ngIf="modalKind()==='STAFF'">
+            Datos del trabajador + cuenta de acceso en un solo lugar.
+          </div>
+        </div>
+        <button class="x" type="button" (click)="closeModal()">×</button>
+      </div>
+
+      <div class="modal__body">
+        <!-- STAFF -->
+        <div *ngIf="modalKind()==='STAFF'" class="formGrid">
+          <div class="section">
+            <div class="section__title">Datos del trabajador</div>
+
+            <label class="f">
+              <span>Nombre</span>
+              <input class="in" type="text" [value]="w_display_name()" (input)="w_display_name.set(($any($event.target)).value)" />
+            </label>
+
+            <div class="row2">
+              <label class="f">
+                <span>Rol</span>
+                <select class="in" [value]="w_role()" (change)="w_role.set(($any($event.target)).value)">
+                  <option value="BARBER">Barbero</option>
+                  <option value="NAILS">Uñas</option>
+                  <option value="FACIAL">Facial</option>
+                </select>
+              </label>
+
+              <label class="ck">
+                <input type="checkbox" [checked]="w_active()" (change)="w_active.set(($any($event.target)).checked)" />
+                <span>Activo</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section__title">Cuenta de acceso</div>
+
+            <!-- Si existe cuenta: modo EXISTING por defecto; puedes cambiar a LINK si quieres -->
+            <div class="mode" *ngIf="editingWorkerId()">
+              <button class="chip" type="button" [class.on]="accountMode()==='EXISTING'" (click)="accountMode.set('EXISTING')">Usar cuenta actual</button>
+              <button class="chip" type="button" [class.on]="accountMode()==='CREATE'" (click)="accountMode.set('CREATE')">Crear cuenta</button>
+              <button class="chip" type="button" [class.on]="accountMode()==='LINK'" (click)="accountMode.set('LINK')">Vincular existente</button>
+            </div>
+
+            <div class="mode" *ngIf="!editingWorkerId()">
+              <button class="chip" type="button" [class.on]="accountMode()==='CREATE'" (click)="accountMode.set('CREATE')">Crear cuenta</button>
+              <button class="chip" type="button" [class.on]="accountMode()==='LINK'" (click)="accountMode.set('LINK')">Vincular existente</button>
+            </div>
+
+            <!-- LINK -->
+            <div *ngIf="accountMode()==='LINK'">
+              <label class="f">
+                <span>Seleccionar cuenta</span>
+                <select class="in" [value]="linkUserId() ?? ''" (change)="linkUserId.set(($any($event.target)).value ? +($any($event.target)).value : null)">
+                  <option value="">—</option>
+                  <option *ngFor="let u of unlinkedUsers()" [value]="u.id">
+                    {{ u.username }} {{ u.email ? ('• ' + u.email) : '' }}
+                  </option>
+                </select>
+              </label>
+
+              <div class="hint">Se vinculará esta cuenta al trabajador. Útil si ya fue creada antes.</div>
+            </div>
+
+            <!-- CREATE / EXISTING: formulario de cuenta -->
+            <div *ngIf="accountMode()!=='LINK'">
+              <label class="f">
+                <span>Usuario</span>
+                <input class="in" type="text" [value]="u_username()" (input)="u_username.set(($any($event.target)).value)" />
+              </label>
+
+              <label class="f">
+                <span>Contraseña <span class="hintInline">(si la llenas aquí, se crea o se restablece)</span></span>
+                <input class="in" type="password" [value]="u_password()" (input)="u_password.set(($any($event.target)).value)" />
+              </label>
+
+              <div class="row2">
+                <label class="f">
+                  <span>Email</span>
+                  <input class="in" type="email" [value]="u_email()" (input)="u_email.set(($any($event.target)).value)" />
+                </label>
+                <label class="f">
+                  <span>Teléfono</span>
+                  <input class="in" type="text" [value]="u_phone()" (input)="u_phone.set(($any($event.target)).value)" />
+                </label>
+              </div>
+
+              <div class="row2">
+                <label class="f">
+                  <span>Nombres</span>
+                  <input class="in" type="text" [value]="u_first()" (input)="u_first.set(($any($event.target)).value)" />
+                </label>
+                <label class="f">
+                  <span>Apellidos</span>
+                  <input class="in" type="text" [value]="u_last()" (input)="u_last.set(($any($event.target)).value)" />
+                </label>
+              </div>
+
+              <label class="ck">
+                <input type="checkbox" [checked]="u_active()" (change)="u_active.set(($any($event.target)).checked)" />
+                <span>Cuenta activa</span>
+              </label>
+
+              <label class="ck">
+                <input type="checkbox" [checked]="u_staff()" (change)="u_staff.set(($any($event.target)).checked)" />
+                <span>Acceso al panel (administrador)</span>
+              </label>
+
+              <details class="adv">
+                <summary>Permisos avanzados</summary>
+                <label class="ck">
+                  <input type="checkbox" [checked]="u_super()" (change)="u_super.set(($any($event.target)).checked)" />
+                  <span>Super administrador</span>
+                </label>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <!-- CUSTOMER -->
+        <div *ngIf="modalKind()==='CUSTOMER'">
+          <label class="f">
+            <span>Tipo</span>
+            <select class="in" [value]="c_type()" (change)="c_type.set(($any($event.target)).value)">
+              <option value="CASUAL">Casual</option>
+              <option value="FREQUENT">Frecuente</option>
+            </select>
+          </label>
+
+          <label class="f">
+            <span>Nombre</span>
+            <input class="in" type="text" [value]="c_name()" (input)="c_name.set(($any($event.target)).value)" />
+          </label>
+
+          <div class="row2">
+            <label class="f">
+              <span>Teléfono</span>
+              <input class="in" type="text" [value]="c_phone()" (input)="c_phone.set(($any($event.target)).value)" />
+            </label>
+
+            <label class="f">
+              <span>Nacimiento</span>
+              <input class="in" type="date" [value]="c_birth()" (change)="c_birth.set(($any($event.target)).value)" />
+            </label>
+          </div>
+
+          <label class="ck">
+            <input type="checkbox" [checked]="c_active()" (change)="c_active.set(($any($event.target)).checked)" />
+            <span>Activo</span>
+          </label>
+        </div>
+
+        <div class="modal__actions">
+          <button class="btn btn--ghost" type="button" (click)="closeModal()">Cancelar</button>
+          <button class="btn btn--primary" type="button" (click)="saveModal()" [disabled]="loading()">
+            {{ loading() ? 'Guardando…' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" *ngIf="toast()">{{ toast() }}</div>
+</section>

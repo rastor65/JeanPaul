@@ -1,0 +1,140 @@
+<header class="jp-bar" role="banner">
+  <div class="jp-inner">
+    <!-- Brand -->
+    <div class="left">
+      <a class="brand" [routerLink]="'/app/home'" (click)="closeMenu()">
+        <div class="mark" aria-hidden="true">JP</div>
+        <div class="brand-text">
+          <strong class="brand-name">Barbería Jean Paul</strong>
+          <span class="brand-tag">Panel interno</span>
+        </div>
+      </a>
+    </div>
+
+    <!-- Desktop nav -->
+    <nav class="nav" aria-label="Menú principal">
+      <a
+        class="nav-item"
+        *ngFor="let it of nav"
+        [routerLink]="it.link"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: !!it.exact }"
+      >
+        <span class="ico" aria-hidden="true">
+          <svg class="svg" viewBox="0 0 24 24">
+            <path [attr.d]="iconPath(it.icon)"></path>
+          </svg>
+        </span>
+        <span class="lbl">{{ it.label }}</span>
+      </a>
+    </nav>
+
+    <!-- Right -->
+    <div class="right">
+      <div class="user" title="{{ displayName }} — {{ roleLabel }}">
+        <div class="avatar" aria-hidden="true"></div>
+        <div class="user-txt">
+          <strong class="user-name">{{ displayName }}</strong>
+          <span class="user-role">{{ roleLabel }}</span>
+        </div>
+      </div>
+
+      <!-- Submenú (Ajustes + Cerrar sesión) -->
+      <div class="user-menu" (click)="$event.stopPropagation()">
+        <button
+          class="btn icon2"
+          type="button"
+          (click)="toggleUserMenu($event)"
+          aria-label="Acciones de usuario"
+          [attr.aria-expanded]="userMenuOpen"
+          aria-haspopup="menu"
+        >
+          <span class="dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        </button>
+
+        <div class="menu" *ngIf="userMenuOpen" role="menu" aria-label="Menú de usuario">
+          <button class="menu-item" type="button" (click)="openSettings()">
+            <span class="mi-ico" aria-hidden="true">
+              <svg class="svg2" viewBox="0 0 24 24"><path [attr.d]="iconPath('gear')"></path></svg>
+            </span>
+            Ajustes
+          </button>
+
+          <button class="menu-item danger" type="button" (click)="logout()">
+            <span class="mi-ico" aria-hidden="true">⟲</span>
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile menu toggle -->
+      <button
+        class="btn icon"
+        type="button"
+        (click)="toggleMenu()"
+        aria-label="Menú"
+        [attr.aria-expanded]="menuOpen"
+        aria-controls="jp-drawer"
+      >
+        <span class="burger" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile drawer -->
+  <div class="drawer" *ngIf="menuOpen" (click)="closeMenu()">
+    <div
+      id="jp-drawer"
+      class="drawer-card"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Menú de navegación"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="drawer-head">
+        <div class="drawer-title">Menú</div>
+        <button class="x" type="button" (click)="closeMenu()" aria-label="Cerrar">✕</button>
+      </div>
+
+      <!-- user inside mobile -->
+      <div class="drawer-user">
+        <div class="avatar" aria-hidden="true"></div>
+        <div class="user-txt">
+          <strong class="user-name">{{ displayName }}</strong>
+          <span class="user-role">{{ roleLabel }}</span>
+        </div>
+      </div>
+
+      <div class="drawer-nav">
+        <a
+          class="drawer-item"
+          *ngFor="let it of nav"
+          [routerLink]="it.link"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: !!it.exact }"
+          (click)="closeMenu()"
+        >
+          <span class="ico" aria-hidden="true">
+            <svg class="svg" viewBox="0 0 24 24">
+              <path [attr.d]="iconPath(it.icon)"></path>
+            </svg>
+          </span>
+          <span class="lbl">{{ it.label }}</span>
+          <span class="chev" aria-hidden="true">›</span>
+        </a>
+      </div>
+
+      <div class="drawer-actions">
+        <button class="btn full ghost" type="button" (click)="openSettings(); closeMenu()">Ajustes</button>
+        <button class="btn full" type="button" (click)="logout()">Cerrar sesión</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL AJUSTES -->
+  <app-settings-modal
+    [open]="settingsOpen"
+    (closed)="closeSettings()"
+    (saved)="onSettingsSaved($event)"
+  ></app-settings-modal>
+</header>

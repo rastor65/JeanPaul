@@ -4,22 +4,15 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 class CookieJWTAuthentication(JWTAuthentication):
     """
-    Intenta primero header Authorization: Bearer <token>.
-    Si no existe, usa cookie HttpOnly "access".
+    Autenticación por JWT en cookie HttpOnly (access).
+    Lee el token desde request.COOKIES[settings.JWT_COOKIE_ACCESS]
     """
-    def authenticate(self, request):
-        header = self.get_header(request)
-        if header is not None:
-            raw = self.get_raw_token(header)
-            if raw is None:
-                return None
-            validated = self.get_validated_token(raw)
-            return self.get_user(validated), validated
 
-        cookie_name = getattr(settings, "JWT_COOKIE_ACCESS", "access")
-        raw_token = request.COOKIES.get(cookie_name)
+    def authenticate(self, request):
+        raw_token = request.COOKIES.get(getattr(settings, "JWT_COOKIE_ACCESS", "jp_access"))
         if not raw_token:
             return None
 
-        validated = self.get_validated_token(raw_token)
-        return self.get_user(validated), validated
+        validated_token = self.get_validated_token(raw_token)
+        user = self.get_user(validated_token)
+        return (user, validated_token)

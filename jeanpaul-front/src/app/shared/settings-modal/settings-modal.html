@@ -1,0 +1,357 @@
+<div class="jp-modal" *ngIf="open" (click)="close()">
+  <div class="card" role="dialog" aria-modal="true" aria-label="Ajustes del sistema" (click)="$event.stopPropagation()">
+    <header class="head">
+      <div class="t">
+        <h2>Ajustes</h2>
+        <p>Configura el comportamiento del sistema (se guarda localmente en este navegador).</p>
+      </div>
+
+      <div class="actions">
+        <button class="btn ghost" type="button" (click)="restoreDefaults()" [disabled]="saving">Restablecer</button>
+        <button class="btn" type="button" (click)="save()" [disabled]="saving || form.pristine || form.invalid">
+          {{ saving ? 'Guardando…' : 'Guardar' }}
+        </button>
+        <button class="x" type="button" (click)="close()" aria-label="Cerrar">✕</button>
+      </div>
+    </header>
+
+    <div class="body">
+      <!-- Tabs -->
+      <aside class="tabs" aria-label="Secciones">
+        <button class="tab" type="button" [class.active]="tab==='general'" (click)="setTab('general')">General</button>
+        <button class="tab" type="button" [class.active]="tab==='agenda'" (click)="setTab('agenda')">Agenda</button>
+        <button class="tab" type="button" [class.active]="tab==='payments'" (click)="setTab('payments')">Pagos</button>
+        <button class="tab" type="button" [class.active]="tab==='notifications'" (click)="setTab('notifications')">Notificaciones</button>
+        <button class="tab" type="button" [class.active]="tab==='staff'" (click)="setTab('staff')">Personal</button>
+        <button class="tab" type="button" [class.active]="tab==='security'" (click)="setTab('security')">Seguridad</button>
+        <button class="tab" type="button" [class.active]="tab==='appearance'" (click)="setTab('appearance')">Apariencia</button>
+        <button class="tab" type="button" [class.active]="tab==='advanced'" (click)="setTab('advanced')">Avanzado</button>
+
+        <div class="hint">
+          <div class="h-title">Atajos</div>
+          <div class="h-line"><span>ESC</span><span>Cerrar</span></div>
+          <div class="h-line"><span>Ctrl + S</span><span>Guardar</span></div>
+        </div>
+      </aside>
+
+      <!-- Content -->
+      <section class="content" [formGroup]="form">
+        <!-- GENERAL -->
+        <div *ngIf="tab==='general'" class="pane">
+          <h3>Información del negocio</h3>
+          <div class="grid" formGroupName="business">
+            <div class="field span-2">
+              <label>Nombre</label>
+              <input class="input" type="text" formControlName="name" />
+              <small class="muted">Se usa en recibos y encabezados.</small>
+            </div>
+
+            <div class="field">
+              <label>Teléfono / WhatsApp</label>
+              <input class="input" type="text" formControlName="phone" placeholder="Ej. +57 300 000 0000" />
+            </div>
+
+            <div class="field">
+              <label>Zona horaria</label>
+              <input class="input" type="text" formControlName="timezone" />
+            </div>
+
+            <div class="field span-2">
+              <label>Dirección</label>
+              <input class="input" type="text" formControlName="address" />
+            </div>
+
+            <div class="field">
+              <label>Moneda</label>
+              <select class="select" formControlName="currency">
+                <option value="COP">COP</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>Reglas de registro de clientes</h3>
+          <div class="grid" formGroupName="booking">
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="allowWalkinNameOnly" /> Cliente casual: permitir solo nombre</label>
+              <small class="muted">Si se desactiva, se exigirán más datos al agendar.</small>
+            </div>
+
+            <div class="field check">
+              <label><input type="checkbox" formControlName="requirePhoneFrequent" /> Frecuente: exigir teléfono</label>
+            </div>
+
+            <div class="field check">
+              <label><input type="checkbox" formControlName="requireBirthFrequent" /> Frecuente: exigir fecha de nacimiento</label>
+            </div>
+
+            <div class="field">
+              <label>Descuento cumpleaños (%)</label>
+              <input class="input" type="number" formControlName="birthdayDiscountPercent" />
+            </div>
+
+            <div class="field">
+              <label>Política de cancelación (horas)</label>
+              <input class="input" type="number" formControlName="cancelPolicyHours" />
+            </div>
+          </div>
+        </div>
+
+        <!-- AGENDA -->
+        <div *ngIf="tab==='agenda'" class="pane">
+          <h3>Configuración de agenda</h3>
+          <div class="grid" formGroupName="booking">
+            <div class="field">
+              <label>Tamaño de bloque (min)</label>
+              <input class="input" type="number" formControlName="slotMinutes" />
+              <small class="muted">Recomendado: 10, 15 o 20.</small>
+            </div>
+
+            <div class="field">
+              <label>Colchón entre citas (min)</label>
+              <input class="input" type="number" formControlName="bufferMinutes" />
+              <small class="muted">Tiempo para limpiar / preparar.</small>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="allowOverbooking" /> Permitir sobrecupo (no recomendado)</label>
+              <small class="muted">Si se activa, se permitirán cruces intencionales.</small>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>Asignación de trabajadores</h3>
+          <div class="grid" formGroupName="staff">
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="autoAssignNearest" /> Asignar automáticamente el trabajador disponible más cercano</label>
+            </div>
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="allowChooseWorker" /> Permitir escoger trabajador manualmente</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- PAGOS -->
+        <div *ngIf="tab==='payments'" class="pane">
+          <h3>Métodos de pago</h3>
+          <div class="grid" formGroupName="payments">
+            <div class="field check span-2" formGroupName="enabled">
+              <label class="muted">Habilitados</label>
+              <div class="checks">
+                <label><input type="checkbox" formControlName="CASH" /> Efectivo</label>
+                <label><input type="checkbox" formControlName="TRANSFER" /> Transferencia</label>
+                <label><input type="checkbox" formControlName="CARD" /> Tarjeta</label>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Método por defecto</label>
+              <select class="select" formControlName="defaultMethod">
+                <option value="CASH">Efectivo</option>
+                <option value="TRANSFER">Transferencia</option>
+                <option value="CARD">Tarjeta</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>IVA (%)</label>
+              <input class="input" type="number" formControlName="taxPercent" />
+            </div>
+
+            <div class="field">
+              <label>Redondeo</label>
+              <select class="select" formControlName="rounding">
+                <option [ngValue]="0">Sin redondeo</option>
+                <option [ngValue]="50">A 50</option>
+                <option [ngValue]="100">A 100</option>
+              </select>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="requireMethodWhenCollected" /> Exigir método cuando se registra cobro</label>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="allowPartialPayments" /> Permitir pagos parciales</label>
+              <small class="muted">Si luego lo implementas en backend, te sirve para abonos.</small>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="showTaxInReceipt" /> Mostrar IVA en recibo</label>
+            </div>
+
+            <div class="field span-2">
+              <label>Pie de recibo</label>
+              <textarea class="textarea" rows="3" formControlName="receiptFooter"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- NOTIFICACIONES -->
+        <div *ngIf="tab==='notifications'" class="pane" formGroupName="notifications">
+          <h3>Recordatorios y mensajes</h3>
+          <div class="grid">
+            <div class="field">
+              <label>Recordatorio</label>
+              <select class="select" formControlName="reminderMode">
+                <option value="NONE">Desactivado</option>
+                <option value="WHATSAPP">WhatsApp</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Horas antes</label>
+              <input class="input" type="number" formControlName="reminderHoursBefore" />
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="sendAfterCare" /> Enviar mensaje post-servicio</label>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="includeMapLink" /> Incluir enlace de ubicación en mensajes</label>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>Plantillas (variables)</h3>
+          <div class="muted pill">
+            Disponibles:
+            <span class="tag" *ngFor="let p of placeholders()">{{ p }}</span>
+          </div>
+
+          <div class="grid" formGroupName="templates">
+            <div class="field span-2">
+              <label>Confirmación</label>
+              <textarea class="textarea" rows="4" formControlName="confirm"></textarea>
+            </div>
+
+            <div class="field span-2">
+              <label>Recordatorio</label>
+              <textarea class="textarea" rows="4" formControlName="reminder"></textarea>
+            </div>
+
+            <div class="field span-2">
+              <label>Post-servicio</label>
+              <textarea class="textarea" rows="4" formControlName="afterCare"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- STAFF -->
+        <div *ngIf="tab==='staff'" class="pane" formGroupName="staff">
+          <h3>Permisos y operación</h3>
+          <div class="grid">
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="allowEditPastAppointments" /> Permitir editar turnos pasados</label>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="requirePinForDelete" /> Exigir PIN para eliminar</label>
+            </div>
+
+            <div class="field" *ngIf="form.get('staff.requirePinForDelete')?.value">
+              <label>PIN eliminación</label>
+              <input class="input" type="password" formControlName="deletePin" placeholder="Mínimo 4 dígitos" />
+              <small class="muted">No lo compartas con personal no autorizado.</small>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>Comisiones (si lo usas luego en reportes)</h3>
+          <div class="grid" formGroupName="commissions">
+            <div class="field">
+              <label>Barbero (%)</label>
+              <input class="input" type="number" formControlName="BARBER" />
+            </div>
+            <div class="field">
+              <label>Uñas (%)</label>
+              <input class="input" type="number" formControlName="NAILS" />
+            </div>
+            <div class="field">
+              <label>Facial (%)</label>
+              <input class="input" type="number" formControlName="FACIAL" />
+            </div>
+          </div>
+        </div>
+
+        <!-- SECURITY -->
+        <div *ngIf="tab==='security'" class="pane" formGroupName="security">
+          <h3>Seguridad y auditoría</h3>
+          <div class="grid">
+            <div class="field">
+              <label>Tiempo de sesión (min)</label>
+              <input class="input" type="number" formControlName="sessionTimeoutMinutes" />
+            </div>
+
+            <div class="field">
+              <label>Retención auditoría (días)</label>
+              <input class="input" type="number" formControlName="auditRetentionDays" />
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="maskPhoneInLists" /> Enmascarar teléfonos en listados</label>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="allowCsvExport" /> Permitir exportación CSV</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- APPEARANCE -->
+        <div *ngIf="tab==='appearance'" class="pane" formGroupName="appearance">
+          <h3>Apariencia</h3>
+          <div class="grid">
+            <div class="field">
+              <label>Tema</label>
+              <select class="select" formControlName="theme">
+                <option value="system">Sistema</option>
+                <option value="light">Claro</option>
+                <option value="dark">Oscuro</option>
+              </select>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="compactMode" /> Modo compacto (menos espacios)</label>
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="reduceMotion" /> Reducir animaciones</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- ADVANCED -->
+        <div *ngIf="tab==='advanced'" class="pane" formGroupName="advanced">
+          <h3>Avanzado</h3>
+          <div class="grid">
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="syncBackend" /> Sincronizar con backend (si existe endpoint)</label>
+              <small class="muted">Por ahora este modal guarda localmente. Luego puedes usar este flag.</small>
+            </div>
+
+            <div class="field span-2">
+              <label>API base override (opcional)</label>
+              <input class="input" type="text" formControlName="apiBaseOverride" placeholder="Ej. https://mi-api.com" />
+            </div>
+
+            <div class="field check span-2">
+              <label><input type="checkbox" formControlName="debug" /> Modo debug</label>
+            </div>
+          </div>
+        </div>
+
+        <footer class="foot">
+          <div class="muted" *ngIf="form.pristine">Sin cambios pendientes.</div>
+          <div class="muted" *ngIf="!form.pristine">Cambios pendientes. Usa Guardar.</div>
+        </footer>
+      </section>
+    </div>
+  </div>
+</div>

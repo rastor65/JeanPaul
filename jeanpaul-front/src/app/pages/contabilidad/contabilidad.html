@@ -1,0 +1,395 @@
+<div class="page" [class.is-loading]="loading">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="title">
+        <h1>Gestión contable</h1>
+        <p>Ingresos, pagos del día y ganancia de la barbería (por categoría y trabajador).</p>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <button class="btn ghost" type="button" (click)="reload()" [disabled]="loading">Recargar</button>
+      <button class="btn" type="button" (click)="exportCsv()" [disabled]="loading || filteredAppointments.length === 0">
+        Exportar CSV
+      </button>
+    </div>
+  </header>
+
+  <!-- Filters -->
+  <section class="filters-panel">
+    <div class="filters-grid" [formGroup]="filtersForm">
+      <div class="field">
+        <label>Período rápido</label>
+        <div class="segmented">
+          <button type="button" class="seg" [class.active]="quick==='DAY'" (click)="setQuick('DAY')" [disabled]="loading">Hoy</button>
+          <button type="button" class="seg" [class.active]="quick==='WEEK'" (click)="setQuick('WEEK')" [disabled]="loading">Semana</button>
+          <button type="button" class="seg" [class.active]="quick==='MONTH'" (click)="setQuick('MONTH')" [disabled]="loading">Mes</button>
+          <button type="button" class="seg" [class.active]="quick==='YEAR'" (click)="setQuick('YEAR')" [disabled]="loading">Año</button>
+          <button type="button" class="seg" [class.active]="quick==='CUSTOM'" (click)="setQuick('CUSTOM')" [disabled]="loading">Personalizado</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Desde</label>
+        <input class="input" type="date" formControlName="from" (change)="onDateRangeChanged()" />
+      </div>
+
+      <div class="field">
+        <label>Hasta</label>
+        <input class="input" type="date" formControlName="to" (change)="onDateRangeChanged()" />
+      </div>
+
+      <div class="field">
+        <label>Trabajador</label>
+        <select class="select" formControlName="workerId">
+          <option [value]="0">Todos</option>
+          <option *ngFor="let w of workers" [value]="w.id">{{ w.label }}</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Estado</label>
+        <select class="select" formControlName="status">
+          <option value="ALL">Todos</option>
+          <option value="ATTENDED">Atendidos</option>
+          <option value="RESERVED">Reservados</option>
+          <option value="CANCELLED">Cancelados</option>
+          <option value="NO_SHOW">No asistieron</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Método de pago</label>
+        <select class="select" formControlName="paymentMethod">
+          <option value="ALL">Todos</option>
+          <option value="CASH">Efectivo</option>
+          <option value="TRANSFER">Transferencia</option>
+          <option value="CARD">Tarjeta</option>
+          <option value="NONE">Sin registrar</option>
+        </select>
+      </div>
+
+      <div class="field actions">
+        <button class="btn ghost" type="button" (click)="resetFilters()" [disabled]="loading">Limpiar filtros</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Summary -->
+  <section class="summary">
+    <div class="kpi kpi-gen">
+      <div class="kpi-title">Generado</div>
+      <div class="kpi-value">{{ money(totalGenerated) }}</div>
+      <div class="kpi-sub">Atendidos (recomendado o suma de servicios)</div>
+    </div>
+
+    <div class="kpi kpi-col">
+      <div class="kpi-title">Cobrado</div>
+      <div class="kpi-value">{{ money(totalCollected) }}</div>
+      <div class="kpi-sub">Pagos con evidencia (paid_at / método / valor)</div>
+    </div>
+
+    <div class="kpi kpi-pend">
+      <div class="kpi-title">Por cobrar</div>
+      <div class="kpi-value">{{ money(totalPending) }}</div>
+      <div class="kpi-sub">Generado − Cobrado</div>
+    </div>
+
+    <div class="kpi kpi-neutral">
+      <div class="kpi-title">Atendidos</div>
+      <div class="kpi-value">{{ countAttended }}</div>
+      <div class="kpi-sub">En el rango filtrado</div>
+    </div>
+
+    <div class="kpi kpi-pay">
+      <div class="kpi-title">Pago trabajadores</div>
+      <div class="kpi-value">{{ money(payrollWorkerTotal) }}</div>
+      <div class="kpi-sub">Liquidación ({{ payrollBase === 'COLLECTED' ? 'Base: Cobrado' : 'Base: Producido' }})</div>
+    </div>
+
+    <div class="kpi kpi-shop">
+      <div class="kpi-title">Ganancia barbería</div>
+      <div class="kpi-value">{{ money(payrollShopTotal) }}</div>
+      <div class="kpi-sub">Base total − Pago trabajadores</div>
+    </div>
+
+    <div class="kpi kpi-neutral">
+      <div class="kpi-title">Ticket promedio</div>
+      <div class="kpi-value">{{ money(avgTicket) }}</div>
+      <div class="kpi-sub">Cobrado / Atendidos cobrados</div>
+    </div>
+
+    <div class="kpi kpi-methods">
+      <div class="kpi-title">Métodos</div>
+      <div class="kpi-sub lines">
+        <div class="line"><span>Efectivo</span><span class="v">{{ money(sumCash) }}</span></div>
+        <div class="line"><span>Transferencia</span><span class="v">{{ money(sumTransfer) }}</span></div>
+        <div class="line"><span>Tarjeta</span><span class="v">{{ money(sumCard) }}</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Chart + Liquidación -->
+  <section class="grid-2">
+    <!-- Chart -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-left">
+          <h3>Comportamiento en el tiempo</h3>
+          <p>Comparación de generado vs cobrado según agrupación.</p>
+        </div>
+
+        <!-- OPCIONES DEL GRÁFICO AQUÍ -->
+        <div class="chart-controls" [formGroup]="filtersForm">
+          <div class="cc-field">
+            <label>Agrupar</label>
+            <select class="select small" formControlName="groupBy">
+              <option value="DAY">Día</option>
+              <option value="WEEK">Semana</option>
+              <option value="MONTH">Mes</option>
+            </select>
+          </div>
+
+          <div class="cc-field">
+            <label>Ingreso</label>
+            <select class="select small" formControlName="moneyMode">
+              <option value="BOTH">Generado y Cobrado</option>
+              <option value="GENERATED">Solo generado</option>
+              <option value="COLLECTED">Solo cobrado</option>
+            </select>
+          </div>
+
+          <div class="legend">
+            <span class="lg gen">Generado</span>
+            <span class="lg col">Cobrado</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-wrap" *ngIf="series.length > 0; else noSeries">
+        <div class="chart">
+          <div class="bar" *ngFor="let s of series">
+            <div class="bar-cols" [title]="s.label + ' | Gen: ' + money(s.generated) + ' | Cob: ' + money(s.collected)">
+              <div class="b gen" [style.height.%]="pct(s.generated, seriesMax)"></div>
+              <div class="b col" [style.height.%]="pct(s.collected, seriesMax)"></div>
+            </div>
+            <div class="bar-label">{{ s.short }}</div>
+          </div>
+        </div>
+
+        <div class="chart-foot">
+          <div class="note">Total registros: {{ filteredAppointments.length }}</div>
+          <div class="note">Máximo: {{ money(seriesMax) }}</div>
+        </div>
+      </div>
+
+      <ng-template #noSeries>
+        <div class="empty-mini">No hay datos para graficar con los filtros actuales.</div>
+      </ng-template>
+    </div>
+
+    <!-- Liquidación -->
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Liquidación por trabajador</h3>
+          <p>Ajusta el % por categoría. Calcula pago del trabajador y ganancia barbería.</p>
+        </div>
+
+        <div class="segmented small" role="tablist" aria-label="Base de liquidación">
+          <button type="button" class="seg" [class.active]="payrollBase==='COLLECTED'" (click)="setPayrollBase('COLLECTED')">
+            Base: Cobrado
+          </button>
+          <button type="button" class="seg" [class.active]="payrollBase==='GENERATED'" (click)="setPayrollBase('GENERATED')">
+            Base: Producido
+          </button>
+        </div>
+      </div>
+
+      <div class="payroll-wrap" *ngIf="payrollCategories.length > 0; else noPayroll">
+        <div class="payroll-total">
+          <div class="tot">
+            <div class="k">Base total</div>
+            <div class="v">{{ money(payrollBaseTotal) }}</div>
+          </div>
+          <div class="tot">
+            <div class="k">Pago trabajadores</div>
+            <div class="v">{{ money(payrollWorkerTotal) }}</div>
+          </div>
+          <div class="tot">
+            <div class="k">Ganancia barbería</div>
+            <div class="v">{{ money(payrollShopTotal) }}</div>
+          </div>
+        </div>
+
+        <details class="cat" *ngFor="let c of payrollCategories" [open]="payrollCategories.length===1">
+          <summary class="cat-sum">
+            <div class="cat-left">
+              <div class="cat-title">{{ c.role }}</div>
+              <div class="cat-sub muted">{{ c.workers.length }} trabajador(es)</div>
+            </div>
+
+            <div class="cat-pct" (click)="$event.stopPropagation()">
+              <span class="pct-label">% trabajador</span>
+              <input
+                class="pct-input"
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                [ngModel]="rolePct[c.role]"
+                (ngModelChange)="setRolePct(c.role, $event)"
+                [ngModelOptions]="{standalone:true}"
+              />
+            </div>
+
+            <div class="cat-right">
+              <div class="mini-line"><span class="k">Base</span><span class="v">{{ money(c.baseTotal) }}</span></div>
+              <div class="mini-line"><span class="k">Trab.</span><span class="v">{{ money(c.workerPayTotal) }}</span></div>
+              <div class="mini-line"><span class="k">Barb.</span><span class="v">{{ money(c.shopGainTotal) }}</span></div>
+            </div>
+          </summary>
+
+          <div class="cat-body">
+            <table class="table compact">
+              <thead>
+                <tr>
+                  <th>Trabajador</th>
+                  <th class="num">Atendidos</th>
+                  <th class="num">Producido</th>
+                  <th class="num">Pago</th>
+                  <th class="num">Barbería</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let r of c.workers">
+                  <td>
+                    <div class="wname">{{ r.worker_label }}</div>
+                    <div class="wsub muted">Participación: {{ r.pct }}%</div>
+                  </td>
+                  <td class="num">{{ r.attended }}</td>
+                  <td class="num">{{ money(r.produced) }}</td>
+                  <td class="num"><span class="strong">{{ money(r.workerPay) }}</span></td>
+                  <td class="num">{{ money(r.shopGain) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+
+      <ng-template #noPayroll>
+        <div class="empty-mini">No hay datos suficientes para calcular liquidación con los filtros actuales.</div>
+      </ng-template>
+    </div>
+  </section>
+
+  <!-- Detail table -->
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h3>Detalle de turnos</h3>
+        <p>Listado filtrado para auditoría rápida.</p>
+      </div>
+
+      <div class="mini-actions">
+        <button class="mini-btn ghost" type="button" (click)="toggleDetails()">
+          {{ showDetails ? 'Ocultar' : 'Mostrar' }} detalle
+        </button>
+      </div>
+    </div>
+
+    <div class="table-wrap" *ngIf="filteredAppointments.length > 0; else noDetail">
+      <table class="table">
+        <thead>
+          <tr>
+            <th (click)="setSort('date')" class="sortable">Fecha</th>
+            <th (click)="setSort('customer')" class="sortable">Cliente</th>
+            <th>Trabajadores</th>
+            <th (click)="setSort('status')" class="sortable">Estado</th>
+            <th class="num" (click)="setSort('collected')" class="sortable">Cobrado</th>
+            <th class="num" (click)="setSort('generated')" class="sortable">Generado</th>
+            <th class="num" (click)="setSort('pending')" class="sortable">Pendiente</th>
+            <th>Método</th>
+            <th>Pagado</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr *ngFor="let a of viewAppointments">
+            <td>
+              <div class="strong">{{ fmtDate(a.start_datetime) }}</div>
+              <div class="muted" *ngIf="showDetails">{{ fmtTime(a.start_datetime) }}–{{ fmtTime(a.end_datetime) }}</div>
+            </td>
+
+            <td>
+              <div class="strong">{{ a.customer?.name || '—' }}</div>
+              <div class="muted" *ngIf="showDetails">#{{ a.id }}</div>
+            </td>
+
+            <td>
+              <div class="chips">
+                <span class="chip2" *ngFor="let w of a._workers">{{ w }}</span>
+                <span class="muted" *ngIf="a._workers.length === 0">—</span>
+              </div>
+              <div class="muted" *ngIf="showDetails && a._services.length">{{ a._services.join(', ') }}</div>
+            </td>
+
+            <td>
+              <span class="badge2" [class.ok]="a.status==='ATTENDED'" [class.bad]="a.status==='CANCELLED' || a.status==='NO_SHOW'">
+                {{ labelStatus(a.status) }}
+              </span>
+            </td>
+
+            <td class="num">
+              <div class="strong">{{ money(a._collected) }}</div>
+              <div class="muted" *ngIf="showDetails && a._collected === 0">Sin cobro</div>
+            </td>
+
+            <td class="num"><div class="strong">{{ money(a._generated) }}</div></td>
+            <td class="num"><div class="strong">{{ money(a._pending) }}</div></td>
+
+            <td><span class="muted">{{ labelMethod(a.payment_method) }}</span></td>
+
+            <td>
+              <span class="muted" *ngIf="a.paid_at; else notPaid">{{ fmtDate(a.paid_at) }}</span>
+              <ng-template #notPaid><span class="muted">—</span></ng-template>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="pager">
+        <button class="icon-btn" type="button" (click)="prevPage()" [disabled]="page <= 1">‹</button>
+        <div class="muted">Página {{ page }} / {{ totalPages }}</div>
+        <button class="icon-btn" type="button" (click)="nextPage()" [disabled]="page >= totalPages">›</button>
+
+        <select class="select small" [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
+          <option [ngValue]="10">10</option>
+          <option [ngValue]="20">20</option>
+          <option [ngValue]="50">50</option>
+          <option [ngValue]="100">100</option>
+        </select>
+      </div>
+    </div>
+
+    <ng-template #noDetail>
+      <div class="empty-mini">No hay turnos para mostrar con el rango y filtros actuales.</div>
+    </ng-template>
+  </section>
+
+  <!-- Toasts -->
+  <div class="toasts" aria-live="polite" aria-atomic="true">
+    <div class="toast" *ngFor="let t of toasts" [class.ok]="t.type==='success'" [class.bad]="t.type==='error'" [class.info]="t.type==='info'">
+      <div class="toast-title">{{ t.title }}</div>
+      <div class="toast-msg">{{ t.message }}</div>
+    </div>
+  </div>
+
+  <!-- Loading veil -->
+  <div class="veil" *ngIf="loading">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="veil-text">Procesando…</div>
+  </div>
+</div>

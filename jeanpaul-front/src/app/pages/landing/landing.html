@@ -1,0 +1,200 @@
+<section class="page">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-bg" aria-hidden="true"></div>
+
+    <div class="hero-inner">
+      <div class="left">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">JP</div>
+          <div class="brand-text">
+            <span class="kicker">Barbería</span>
+            <span class="name">Jean Paul</span>
+          </div>
+        </div>
+
+        <h1>
+          Tu mejor estilo,
+          <span class="gold">en Jean Paul</span>
+        </h1>
+
+        <p class="lead">
+          Motiladas, barba, cejas, uñas y limpieza facial.
+          Reserva tu turno en segundos con disponibilidad real por trabajador.
+        </p>
+
+        <div class="bullets">
+          <div class="pill">
+            <span class="dot"></span>
+            Agenda organizada, sin filas
+          </div>
+          <div class="pill">
+            <span class="dot"></span>
+            Paquetes combinados
+          </div>
+          <div class="pill">
+            <span class="dot"></span>
+            Beneficios por cumpleaños (frecuentes)
+          </div>
+        </div>
+
+        <div class="cta-row">
+          <!-- Este botón lo puedes enlazar a tu acción existente (abrir modal) desde el componente padre -->
+          <button class="btn primary" type="button" (click)="openReserve()">
+            Reservar turno
+          </button>
+
+          <a class="btn ghost" href="/login">
+            Ingreso staff
+          </a>
+        </div>
+
+        <p class="note">
+          Haz clic en <strong>“Reservar turno”</strong> para abrir el formulario de reserva.
+        </p>
+
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-val">8:00</div>
+            <div class="stat-lbl">Apertura</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val">20:00</div>
+            <div class="stat-lbl">Cierre</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val">L–S</div>
+            <div class="stat-lbl">Atención</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="stack">
+          <article class="card highlight">
+            <div class="card-head">
+              <h3>Promoción destacada</h3>
+              <span class="tag">Frecuentes</span>
+            </div>
+            <p>
+              Si eres cliente frecuente y tu cumpleaños coincide con la fecha de tu cita,
+              podrás recibir un beneficio configurado por la barbería.
+            </p>
+            <p class="mini">
+              Nota: para ser cliente frecuente debes registrarte en recepción.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <h3>Horarios</h3>
+              <span class="tag subtle">Info</span>
+            </div>
+            <p><strong>Lunes a sábado:</strong> 8:00 a.m. – 8:00 p.m.</p>
+            <p class="mini">Domingos y festivos: sujeto a disponibilidad</p>
+          </article>
+
+          <article class="card glass">
+            <div class="card-head">
+              <h3>¿Cómo funciona?</h3>
+              <span class="tag subtle">Rápido</span>
+            </div>
+
+            <div class="steps">
+              <div class="step">
+                <span class="n">1</span>
+                <div>
+                  <strong>Elige servicios</strong>
+                  <span class="mini">Corte, barba, cejas, uñas, facial…</span>
+                </div>
+              </div>
+              <div class="step">
+                <span class="n">2</span>
+                <div>
+                  <strong>Selecciona trabajador</strong>
+                  <span class="mini">Próximo disponible o barbero específico</span>
+                </div>
+              </div>
+              <div class="step">
+                <span class="n">3</span>
+                <div>
+                  <strong>Escoge la mejor hora</strong>
+                  <span class="mini">Opciones reales según disponibilidad</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="hint-card">
+          <div class="pulse" aria-hidden="true"></div>
+          <div class="hint-text">
+            <strong>Tip:</strong> mientras más servicios elijas, el sistema ajusta la duración total y
+            te mostrará solo horarios posibles.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SERVICES -->
+  <section class="services">
+    <div class="section-title">
+      <h2>Servicios</h2>
+      <p>Calidad, precisión y experiencia en cada detalle.</p>
+    </div>
+
+    <div class="grid">
+      <div class="item">
+        <div class="icon" aria-hidden="true">✂</div>
+        <h4>Cortes y estilo</h4>
+        <p>Clásico, fade, barbería moderna y asesoría rápida.</p>
+        <div class="item-foot">
+          <span class="chip">Corte</span>
+          <span class="chip">Degradado</span>
+          <span class="chip">Styling</span>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="icon" aria-hidden="true">🧔</div>
+        <h4>Barba y cejas</h4>
+        <p>Perfilado, limpieza, diseño y retoques finos.</p>
+        <div class="item-foot">
+          <span class="chip">Barba</span>
+          <span class="chip">Cejas</span>
+          <span class="chip">Detalles</span>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="icon" aria-hidden="true">✨</div>
+        <h4>Uñas y facial</h4>
+        <p>Arreglo de uñas y limpieza facial con personal fijo.</p>
+        <div class="item-foot">
+          <span class="chip">Manicura</span>
+          <span class="chip">Pedicura</span>
+          <span class="chip">Facial</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sticky CTA (solo visual; si ya tienes tu botón arriba puedes dejarlo) -->
+  <div class="sticky-cta">
+    <div class="sticky-inner">
+      <div class="sticky-text">
+        <strong>¿Listo para tu turno?</strong>
+        <span class="mini">Reserva rápido con disponibilidad real.</span>
+      </div>
+      <button class="btn primary" type="button" (click)="openReserve()">
+        Reservar turno
+      </button>
+    </div>
+  </div>
+</section>
+
+<app-reserve-modal
+  [open]="reserveOpen"
+  (closed)="closeReserve()">
+</app-reserve-modal>

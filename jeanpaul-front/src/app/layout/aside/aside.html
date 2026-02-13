@@ -1,0 +1,50 @@
+<aside class="jp-aside" [class.collapsed]="collapsed()" role="complementary">
+  <div class="top">
+    <div class="brand" [attr.title]="collapsed() ? 'Barbería Jean Paul' : null">
+      <button class="brand__mark brand__mark--btn" type="button" (click)="toggleSidebar()"
+        [attr.aria-pressed]="collapsed()" [attr.aria-label]="collapsed() ? 'Expandir menú' : 'Colapsar menú'"
+        [attr.title]="collapsed() ? 'Expandir menú' : 'Colapsar menú'">
+        JP
+      </button>
+
+      <div class="brand__text">
+        <strong class="brand__name">Jean Paul</strong>
+        <span class="brand__tag">Panel interno</span>
+      </div>
+    </div>
+  </div>
+
+  <nav class="nav" aria-label="Menú lateral">
+    <a class="item" *ngFor="let it of items" [routerLink]="it.link" routerLinkActive="active"
+      [routerLinkActiveOptions]="{ exact: !!it.exact }" [attr.title]="titleFor(it.label)">
+      <span class="rail" aria-hidden="true"></span>
+
+      <span class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" class="svg">
+          <path [attr.d]="iconPath(it.icon)"></path>
+        </svg>
+      </span>
+
+      <span class="label">{{ it.label }}</span>
+      <span class="chev" aria-hidden="true">›</span>
+    </a>
+  </nav>
+
+  <div class="bottom">
+    <button class="toggle" type="button" (click)="toggleSidebar()" [attr.aria-pressed]="collapsed()"
+      [attr.title]="collapsed() ? 'Expandir menú' : 'Colapsar menú'">
+      <span class="t-ico" aria-hidden="true">{{ collapsed() ? '›' : '‹' }}</span>
+      <span class="t-label">{{ collapsed() ? 'Expandir' : 'Colapsar' }}</span>
+    </button>
+
+    <div class="mini" *ngIf="!collapsed()">
+      <div class="mini__dot" aria-hidden="true"></div>
+      <div class="mini__text">
+        <strong>Barbería Jean Paul</strong>
+        <span>Gestión • Agenda • Operación</span>
+      </div>
+    </div>
+
+    <div class="copy" *ngIf="!collapsed()">© Jean Paul</div>
+  </div>
+</aside>

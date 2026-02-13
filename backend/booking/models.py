@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 
 class Customer(models.Model):
@@ -13,9 +14,26 @@ class Customer(models.Model):
     phone = models.CharField(max_length=20, null=True, blank=True, unique=True)
     birth_date = models.DateField(null=True, blank=True)
 
+    def clean(self):
+        if self.customer_type == self.TYPE_FREQUENT:
+            if not self.phone or not self.birth_date:
+                raise ValidationError("Cliente frecuente requiere phone y birth_date.")
+        if self.customer_type == self.TYPE_CASUAL:
+            # recomendado: no guardar datos de frecuente en casual
+            if self.phone or self.birth_date:
+                raise ValidationError("Cliente casual solo requiere name (sin phone/birth_date).")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["customer_type", "phone"]),
+        ]
+
     def __str__(self):
         return self.name
-
 
 class Appointment(models.Model):
     STATUS_RESERVED = "RESERVED"
@@ -82,11 +100,16 @@ class AppointmentBlock(models.Model):
     end_datetime = models.DateTimeField()
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["worker", "start_datetime"],
+                name="uniq_worker_start_datetime_block",
+            )
+        ]
         indexes = [
             models.Index(fields=["worker", "start_datetime"]),
             models.Index(fields=["worker", "end_datetime"]),
         ]
-        unique_together = ("appointment", "sequence")
 
 
 class AppointmentServiceLine(models.Model):

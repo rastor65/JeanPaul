@@ -1,0 +1,20 @@
+<div class="toast-stack">
+  <div class="toast"
+       *ngFor="let t of (toast.toasts$ | async)"
+       [class.success]="t.type === 'success'"
+       [class.error]="t.type === 'error'"
+       [class.info]="t.type === 'info'">
+    <div class="icon">
+      <span *ngIf="t.type === 'success'">✓</span>
+      <span *ngIf="t.type === 'error'">!</span>
+      <span *ngIf="t.type === 'info'">i</span>
+    </div>
+
+    <div class="content">
+      <div class="title" *ngIf="t.title">{{ t.title }}</div>
+      <div class="msg">{{ t.message }}</div>
+    </div>
+
+    <button class="close" type="button" (click)="dismiss(t.id)" aria-label="Cerrar">✕</button>
+  </div>
+</div>

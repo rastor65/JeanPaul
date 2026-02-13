@@ -1,0 +1,101 @@
+<footer class="jp-footer" role="contentinfo">
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <div class="mark" aria-hidden="true">JP</div>
+        <div class="meta">
+          <strong class="name">Barbería Jean Paul</strong>
+          <span class="tag">Panel interno • Elegancia • Precisión • Estilo</span>
+        </div>
+      </div>
+
+      <div class="cta">
+        <a class="cta-btn" [href]="waUrl" target="_blank" rel="noopener noreferrer">
+          <span class="cta-ico" aria-hidden="true">✆</span>
+          <span>WhatsApp</span>
+        </a>
+
+        <a class="cta-btn" [href]="igUrl" target="_blank" rel="noopener noreferrer">
+          <span class="cta-ico" aria-hidden="true">◎</span>
+          <span>Instagram</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">Contacto</div>
+
+        <div class="line">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="text">{{ phoneDisplay }}</span>
+        </div>
+
+        <div class="line">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="text">{{ address }}</span>
+        </div>
+
+        <div class="line">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="text">Atención por orden de llegada y por reservas</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Horarios</div>
+
+        <div class="line">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="text">Lun–Sab: 8:00 a.m. – 8:00 p.m.</span>
+        </div>
+
+        <div class="line">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="text">Dom: 9:00 a.m. – 5:00 p.m.</span>
+        </div>
+
+        <div class="line">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="text">Festivos: sujeto a disponibilidad</span>
+        </div>
+      </div>
+
+      <div class="card card--right">
+        <div class="card-title">Accesos rápidos</div>
+
+        <div class="quick">
+          <a class="q" href="#" (click)="$event.preventDefault()">
+            <span class="q-ico" aria-hidden="true">★</span>
+            <span>Soporte interno</span>
+          </a>
+        </div>
+
+        <div class="mini">
+          <span class="mini-ico" aria-hidden="true">JP</span>
+          <span class="mini-text">
+            Calidad y experiencia premium en cada servicio.
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="copy">
+        <span>© {{ year }} AlfaCode - Rastor65</span>
+        <span class="sep" aria-hidden="true">•</span>
+        <span class="muted">Todos los derechos reservados</span>
+      </div>
+
+      <div class="social">
+        <a class="s" [href]="igUrl" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
+          <span class="s-ico" aria-hidden="true">◎</span>
+        </a>
+
+        <a class="s" [href]="waUrl" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp">
+          <span class="s-ico" aria-hidden="true">✆</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>

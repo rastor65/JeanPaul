@@ -1,0 +1,611 @@
+<section class="page">
+  <!-- TOP BAR -->
+  <header class="top">
+    <div class="title">
+      <div class="mark" aria-hidden="true">JP</div>
+      <div class="title__text">
+        <h1>Centro de control • Turnos</h1>
+        <p>{{ dateLabel(date()) }}</p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn--ghost" type="button" (click)="prevDay()">‹</button>
+
+      <div class="field">
+        <span class="field__icon" aria-hidden="true">CAL</span>
+        <input #dateInput class="date" type="date" [value]="date()" (change)="setDate(dateInput.value)"
+          aria-label="Seleccionar fecha" />
+      </div>
+
+      <button class="btn btn--ghost" type="button" (click)="nextDay()">›</button>
+
+      <button class="btn btn--ghost" type="button" (click)="setToday()">Hoy</button>
+
+      <button class="btn btn--primary" type="button" (click)="refresh()" [disabled]="loading()">
+        {{ loading() ? 'Cargando…' : 'Actualizar' }}
+      </button>
+
+      <button class="btn btn--ghost" type="button" (click)="toggleAutoRefresh()">
+        {{ autoRefresh() ? 'Auto ON' : 'Auto OFF' }}
+      </button>
+
+      <button class="btn btn--ghost" type="button" (click)="exportCSV()">
+        Exportar CSV
+      </button>
+
+      <button class="btn btn--primary" type="button" (click)="toggleCreate()">
+        {{ createOpen() ? 'Cerrar' : 'Nuevo turno' }}
+      </button>
+    </div>
+  </header>
+
+  <!-- KPIs -->
+  <section class="kpi">
+    <div class="kcard">
+      <span class="klabel">Total</span>
+      <strong class="kvalue">{{ kpis().total }}</strong>
+    </div>
+    <div class="kcard">
+      <span class="klabel">Reservados</span>
+      <strong class="kvalue">{{ kpis().reserved }}</strong>
+    </div>
+    <div class="kcard">
+      <span class="klabel">Atendidos</span>
+      <strong class="kvalue">{{ kpis().attended }}</strong>
+    </div>
+    <div class="kcard">
+      <span class="klabel">Cancelados</span>
+      <strong class="kvalue">{{ kpis().cancelled }}</strong>
+    </div>
+    <div class="kcard">
+      <span class="klabel">No show</span>
+      <strong class="kvalue">{{ kpis().noShow }}</strong>
+    </div>
+    <div class="kcard">
+      <span class="klabel">Total recomendado</span>
+      <strong class="kvalue">{{ money(kpis().recommended) }}</strong>
+    </div>
+    <div class="kcard">
+      <span class="klabel">Total cobrado</span>
+      <strong class="kvalue">{{ money(kpis().paid) }}</strong>
+    </div>
+  </section>
+
+  <!-- FILTERS -->
+  <section class="filters">
+    <div class="chips">
+      <button class="chip" [class.active]="status()==='ALL'" (click)="setStatus('ALL')" type="button">
+        <span>Todos</span><strong>{{ counts().ALL }}</strong>
+      </button>
+      <button class="chip" [class.active]="status()==='RESERVED'" (click)="setStatus('RESERVED')" type="button">
+        <span>Reservados</span><strong>{{ counts().RESERVED }}</strong>
+      </button>
+      <button class="chip" [class.active]="status()==='ATTENDED'" (click)="setStatus('ATTENDED')" type="button">
+        <span>Atendidos</span><strong>{{ counts().ATTENDED }}</strong>
+      </button>
+      <button class="chip" [class.active]="status()==='CANCELLED'" (click)="setStatus('CANCELLED')" type="button">
+        <span>Cancelados</span><strong>{{ counts().CANCELLED }}</strong>
+      </button>
+      <button class="chip" [class.active]="status()==='NO_SHOW'" (click)="setStatus('NO_SHOW')" type="button">
+        <span>No show</span><strong>{{ counts().NO_SHOW }}</strong>
+      </button>
+    </div>
+
+    <div class="rightFilters">
+      <div class="search">
+        <span class="search__icon" aria-hidden="true">⌕</span>
+        <input class="search__input" type="search" placeholder="Buscar por cliente, teléfono, servicio o trabajador…"
+          [value]="query()" (input)="setQuery(($any($event.target)).value)" />
+        <button class="search__clear" type="button" *ngIf="query()" (click)="setQuery('')">×</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ERROR -->
+  <div class="alert" *ngIf="error()">
+    <strong>Atención:</strong> {{ error() }}
+  </div>
+
+  <!-- CREATE PANEL -->
+  <section class="create" *ngIf="createOpen()">
+    <div class="create__head">
+      <div>
+        <h2>Crear turno inmediato</h2>
+        <p class="muted">Para clientes que llegan sin reserva. Se creará para la fecha seleccionada.</p>
+      </div>
+      <div class="create__meta">
+        <span class="pill">Fecha: <strong>{{ date() }}</strong></span>
+        <span class="pill">Duración estimada: <strong>{{ cDurationPreview() }} min</strong></span>
+      </div>
+    </div>
+
+    <div class="create__grid">
+      <!-- CUSTOMER -->
+      <div class="box">
+        <div class="box__title">Cliente</div>
+
+        <div class="toggle">
+          <button class="tbtn" [class.on]="cCustomerType()==='CASUAL'" type="button"
+            (click)="cCustomerType.set('CASUAL')">
+            Casual
+          </button>
+          <button class="tbtn" [class.on]="cCustomerType()==='FREQUENT'" type="button"
+            (click)="cCustomerType.set('FREQUENT')">
+            Frecuente
+          </button>
+        </div>
+
+        <label class="f">
+          <span>Nombre</span>
+          <input class="in" type="text" [value]="cName()" (input)="cName.set(($any($event.target)).value)" />
+        </label>
+
+        <label class="f">
+          <span>Teléfono (solo frecuente)</span>
+          <input class="in" type="text" [value]="cPhone()" (input)="cPhone.set(($any($event.target)).value)" />
+        </label>
+
+        <label class="f">
+          <span>Fecha nacimiento (solo frecuente)</span>
+          <input class="in" type="date" [value]="cBirth()" (change)="cBirth.set(($any($event.target)).value)" />
+        </label>
+      </div>
+
+      <!-- APPOINTMENT -->
+      <div class="box">
+        <div class="box__title">Turno</div>
+
+        <label class="f">
+          <span>Hora de inicio</span>
+          <input class="in" type="time" [value]="cTime()" (change)="cTime.set(($any($event.target)).value)" />
+        </label>
+
+        <label class="f">
+          <span>Trabajador</span>
+          <select class="in" [value]="cWorkerId()" (change)="cWorkerId.set(($any($event.target)).value)">
+            <option value="AUTO">Disponible más cercano (AUTO)</option>
+            <option *ngFor="let w of workers()" [value]="w.id">{{ w.label }}</option>
+          </select>
+        </label>
+
+        <div class="checks">
+          <label class="ck">
+            <input type="checkbox" [checked]="cMarkAttend()"
+              (change)="cMarkAttend.set(($any($event.target)).checked)" />
+            <span>Marcar como atendido al crear</span>
+          </label>
+
+          <label class="ck">
+            <input type="checkbox" [checked]="cRegisterPayment()"
+              (change)="cRegisterPayment.set(($any($event.target)).checked)" />
+            <span>Registrar pago al crear</span>
+          </label>
+        </div>
+
+        <div class="pay" *ngIf="cRegisterPayment()">
+          <label class="f">
+            <span>Monto pagado</span>
+            <input class="in" type="text" inputmode="decimal" [value]="cPayAmount()"
+              (input)="cPayAmount.set(($any($event.target)).value)" />
+          </label>
+
+          <label class="f">
+            <span>Método</span>
+            <select class="in" [value]="cPayMethod()" (change)="cPayMethod.set(($any($event.target)).value)">
+              <option value="CASH">Efectivo</option>
+              <option value="TRANSFER">Transferencia</option>
+              <option value="CARD">Tarjeta</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="create__actions">
+          <button class="btn btn--ghost" type="button" (click)="toggleCreate()">Cancelar</button>
+          <button class="btn btn--primary" type="button" (click)="createAppointment()" [disabled]="catalogLoading()">
+            {{ catalogLoading() ? 'Creando…' : 'Crear turno' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- SERVICES -->
+      <div class="box box--wide">
+        <div class="box__title">Servicios</div>
+
+        <div class="svcSearch">
+          <span class="svcSearch__icon" aria-hidden="true">⌕</span>
+          <input class="svcSearch__input" type="search" placeholder="Buscar servicio…" [value]="cServiceQuery()"
+            (input)="cServiceQuery.set(($any($event.target)).value)" />
+        </div>
+
+        <div class="svcGrid" *ngIf="services().length; else noServices">
+          <button class="svc" type="button" *ngFor="let s of cServicesFiltered()" (click)="toggleService(s.id)"
+            [class.on]="cSelectedServiceIds().includes(s.id)">
+            <div class="svc__name">{{ s.name }}</div>
+            <div class="svc__meta">
+              <span *ngIf="s.duration_minutes">{{ s.duration_minutes }} min</span>
+              <span *ngIf="s.price">• ${{ s.price }}</span>
+            </div>
+          </button>
+        </div>
+
+        <ng-template #noServices>
+          <div class="emptyBox">
+            <strong>No hay servicios cargados</strong>
+            <span class="muted">Revisa el endpoint /api/staff/services/ o permisos del usuario staff.</span>
+          </div>
+        </ng-template>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAIN GRID -->
+  <section class="grid">
+    <!-- LEFT: LIST -->
+    <div class="panel">
+      <div class="panel__head panel__head--stack">
+        <div class="ph-left">
+          <h2>Listado</h2>
+          <p class="muted">{{ filtered().length }} de {{ results().length }} • {{ date() }}</p>
+        </div>
+
+        <div class="ph-right">
+          <div class="attention">
+            <span class="att att--due">Por cobrar: <strong>{{ attention().due }}</strong></span>
+            <span class="att att--ending">Por terminar: <strong>{{ attention().ending }}</strong></span>
+            <span class="att att--run">En curso: <strong>{{ attention().running }}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ✅ CAJA RÁPIDA -->
+      <div class="queueBox" *ngIf="!loading() && results().length">
+        <div class="queueHead">
+          <div class="queueTitle">
+            <strong>Caja rápida</strong>
+            <span class="muted">Ordenada por prioridad (terminados / por terminar)</span>
+          </div>
+
+          <div class="queueTabs">
+            <button class="qtab" type="button" [class.on]="queueTab()==='DUE'" (click)="queueTab.set('DUE')">
+              Por cobrar <strong>{{ attention().due }}</strong>
+            </button>
+            <button class="qtab" type="button" [class.on]="queueTab()==='ENDING'" (click)="queueTab.set('ENDING')">
+              Por terminar <strong>{{ attention().ending }}</strong>
+            </button>
+            <button class="qtab" type="button" [class.on]="queueTab()==='RUN'" (click)="queueTab.set('RUN')">
+              En curso <strong>{{ attention().running }}</strong>
+            </button>
+            <button class="qtab" type="button" [class.on]="queueTab()==='WORKER'" (click)="queueTab.set('WORKER')">
+              Por trabajador <strong>{{ workerFocus().length }}</strong>
+            </button>
+          </div>
+
+          <button class="btn btn--ghost btn--mini" type="button" (click)="selectNextDue()">
+            Ir al siguiente por cobrar
+          </button>
+        </div>
+
+        <!-- LISTA: DUE / ENDING / RUN -->
+        <div class="qList" *ngIf="queueTab() !== 'WORKER'">
+          <div class="qEmpty" *ngIf="quickQueue().length === 0">
+            No hay turnos en esta categoría.
+          </div>
+
+          <div class="qRow" *ngFor="let ap of quickQueue(); trackBy: trackById" [class.selected]="selectedId()===ap.id"
+            [class.qRow--due]="timeKey(ap)==='DUE'" [class.qRow--ending]="timeKey(ap)==='ENDING'"
+            [class.qRow--run]="timeKey(ap)==='RUN'" (click)="select(ap)" role="button" tabindex="0">
+            <div class="qLeft">
+              <div class="qTime">{{ timeLabel(ap.end_datetime) }}</div>
+              <div class="qRel">{{ relativeEnd(ap) }}</div>
+            </div>
+
+            <div class="qMid">
+              <div class="qName">{{ ap.customer.name }}</div>
+              <div class="qSub">
+                {{ primaryWorkerLabel(ap) }} • {{ timeLabel(ap.start_datetime) }}–{{ timeLabel(ap.end_datetime) }}
+              </div>
+            </div>
+
+            <div class="qRight">
+              <div class="qMoney">
+                <span class="muted">Total</span>
+                <strong>{{ money(isBillable(ap) ? ap.recommended_total : 0) }}</strong>
+              </div>
+
+              <div class="qActions">
+                <button class="qBtn qBtn--dark" type="button" (click)="quickCheckout(ap); $event.stopPropagation()"
+                  [disabled]="busyId()===ap.id || isPaid(ap) || ap.status==='CANCELLED' || ap.status==='NO_SHOW'">
+                  {{ ap.status==='RESERVED' ? 'Finalizar y cobrar' : 'Cobrar' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- POR TRABAJADOR -->
+        <div class="wGrid" *ngIf="queueTab()==='WORKER'">
+          <div class="wEmpty" *ngIf="workerFocus().length===0">No hay foco por trabajador.</div>
+
+          <div class="wCard" *ngFor="let w of workerFocus()">
+            <div class="wTop">
+              <strong class="wName">{{ w.worker }}</strong>
+              <span class="tpill" [class]="timePillClass(w.ap)">{{ timePillLabel(w.ap) }}</span>
+            </div>
+
+            <div class="wMid">
+              <div class="wCustomer">{{ w.ap.customer.name }}</div>
+              <div class="wTimes">{{ timeLabel(w.ap.start_datetime) }}–{{ timeLabel(w.ap.end_datetime) }} • {{
+                relativeEnd(w.ap) }}</div>
+            </div>
+
+            <div class="wBottom">
+              <div class="wMoney">
+                <span class="muted">Total</span>
+                <strong>{{ money(w.ap.recommended_total) }}</strong>
+              </div>
+
+              <div class="wActions">
+                <button class="qBtn qBtn--dark" type="button" (click)="select(w.ap)">Ver</button>
+                <button class="qBtn" type="button" (click)="quickCheckout(w.ap)"
+                  [disabled]="busyId()===w.ap.id || isPaid(w.ap) || w.ap.status==='CANCELLED' || w.ap.status==='NO_SHOW'">
+                  Cobrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOADING -->
+      <div class="skeleton" *ngIf="loading()">
+        <div class="sk-row" *ngFor="let _ of [1,2,3,4,5,6]"></div>
+      </div>
+
+      <div class="empty" *ngIf="!loading() && filtered().length === 0">
+        <div class="empty__icon" aria-hidden="true">JP</div>
+        <div class="empty__txt">
+          <strong>Sin turnos</strong>
+          <span>No hay registros para los filtros actuales.</span>
+        </div>
+      </div>
+
+      <!-- LIST -->
+      <div class="list" *ngIf="!loading() && filtered().length > 0">
+        <div class="group" *ngFor="let g of groups()">
+          <div class="group__title">
+            <span class="hr">{{ g.hour }}</span>
+            <span class="line"></span>
+          </div>
+
+          <button class="row" type="button" *ngFor="let ap of g.items; trackBy: trackById" (click)="select(ap)"
+            [class.selected]="selectedId() === ap.id" [class.row--due]="timeKey(ap)==='DUE'"
+            [class.row--ending]="timeKey(ap)==='ENDING'" [class.row--run]="timeKey(ap)==='RUN'">
+            <div class="row__time">
+              <strong>{{ timeLabel(ap.start_datetime) }}</strong>
+              <span class="mins">{{ durationMins(ap.start_datetime, ap.end_datetime) }} min</span>
+              <span class="rel">{{ relativeEnd(ap) }}</span>
+            </div>
+
+            <div class="row__main">
+              <div class="row__top">
+                <span class="name">{{ ap.customer.name }}</span>
+                <span class="sub" *ngIf="ap.customer.phone">{{ ap.customer.phone }}</span>
+              </div>
+
+              <div class="row__meta">
+                <span class="meta">{{ primaryWorkerLabel(ap) }}</span>
+                <span class="meta meta--soft">
+                  {{ serviceCount(ap) }} servicio(s)
+                </span>
+              </div>
+            </div>
+
+            <div class="row__right">
+              <div class="row__money">
+                <span class="muted">Total</span>
+                <strong>{{ money(ap.recommended_total) }}</strong>
+              </div>
+
+              <span class="tpill" [class]="timePillClass(ap)">
+                {{ timePillLabel(ap) }}
+              </span>
+
+              <span class="chev" aria-hidden="true">›</span>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: DETAIL -->
+    <aside class="panel panel--detail">
+      <div class="panel__head">
+        <div>
+          <h2>Detalle</h2>
+          <p class="muted" *ngIf="selected() as ap">
+            Turno #{{ ap.id }} • {{ timeLabel(ap.start_datetime) }}–{{ timeLabel(ap.end_datetime) }}
+          </p>
+          <p class="muted" *ngIf="!selected()">Selecciona un turno para ver detalles.</p>
+        </div>
+      </div>
+
+      <ng-container *ngIf="selected() as ap; else noSelection">
+        <div class="card">
+          <div class="card__row">
+            <div class="k">
+              <span class="k__label">Cliente</span>
+              <strong class="k__value">{{ ap.customer.name }}</strong>
+            </div>
+
+            <div class="k">
+              <span class="k__label">Tiempo</span>
+              <span class="tpill" [class]="timePillClass(ap)">{{ timePillLabel(ap) }}</span>
+            </div>
+          </div>
+
+          <div class="card__row">
+            <div class="k">
+              <span class="k__label">Teléfono</span>
+              <div class="k__inline">
+                <strong class="k__value">{{ ap.customer.phone || '—' }}</strong>
+                <button class="miniBtn" type="button" *ngIf="ap.customer.phone"
+                  (click)="copy(ap.customer.phone || '')">Copiar</button>
+                <a class="miniBtn" *ngIf="ap.customer.phone" [href]="waLink(ap.customer.phone)" target="_blank"
+                  rel="noopener">WhatsApp</a>
+              </div>
+            </div>
+
+            <div class="k">
+              <span class="k__label">Trabajador</span>
+              <strong class="k__value">{{ primaryWorkerLabel(ap) }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">Bloques y servicios</div>
+
+          <div class="svc" *ngFor="let b of ap.blocks">
+            <div class="svc__head">
+              <span class="svc__wk">Bloque {{ b.sequence }}</span>
+              <span class="svc__wk muted">{{ b.worker_label }}</span>
+            </div>
+
+            <div class="svc__list">
+              <div class="svc__item" *ngFor="let s of b.services">
+                <span class="svc__dot" aria-hidden="true"></span>
+                <div class="svc__txt">
+                  <strong>{{ s.name }}</strong>
+                  <span class="muted">
+                    {{ s.duration_minutes }} min
+                    <span *ngIf="s.buffer_before || s.buffer_after">
+                      • buffer {{ s.buffer_before }} / {{ s.buffer_after }}
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="total">
+            <span class="muted">Total recomendado</span>
+            <strong>{{ money(isBillable(ap) ? ap.recommended_total : 0) }}</strong>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">Pago</div>
+
+          <div class="payrow">
+            <div class="k">
+              <span class="k__label">Pagado</span>
+              <strong class="k__value">{{ ap.paid_total ? money(ap.paid_total) : '—' }}</strong>
+            </div>
+            <div class="k">
+              <span class="k__label">Método</span>
+              <strong class="k__value">{{ ap.payment_method || '—' }}</strong>
+            </div>
+          </div>
+
+          <div class="payrow">
+            <div class="k">
+              <span class="k__label">Fecha</span>
+              <strong class="k__value">{{ ap.paid_at || '—' }}</strong>
+            </div>
+            <div class="k">
+              <span class="k__label">Registrado por</span>
+              <strong class="k__value">{{ ap.paid_by || '—' }}</strong>
+            </div>
+          </div>
+
+          <div class="detailPayActions">
+            <button class="btn btn--primary" type="button" (click)="quickCheckout(ap)"
+              [disabled]="busyId()===ap.id || isPaid(ap) || !isBillable(ap)">
+              Cobrar
+            </button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn--primary" type="button" [disabled]="busyId() === ap.id || ap.status !== 'RESERVED'"
+            (click)="markAttend(ap)">
+            {{ busyId() === ap.id ? 'Procesando…' : 'Marcar atendido' }}
+          </button>
+
+          <button class="btn btn--ghost" type="button" [disabled]="busyId() === ap.id || ap.status !== 'RESERVED'"
+            (click)="markNoShow(ap)">
+            No show
+          </button>
+
+          <button class="btn btn--danger" type="button" [disabled]="busyId() === ap.id || ap.status !== 'RESERVED'"
+            (click)="cancel(ap)">
+            Cancelar
+          </button>
+
+          <p class="hint">
+            Acciones disponibles solo cuando está en estado <strong>Reservado</strong>.
+          </p>
+        </div>
+      </ng-container>
+
+      <ng-template #noSelection>
+        <div class="empty empty--detail">
+          <div class="empty__icon" aria-hidden="true">⌁</div>
+          <div class="empty__txt">
+            <strong>Sin selección</strong>
+            <span>Elige un turno del listado para ver el detalle completo.</span>
+          </div>
+        </div>
+      </ng-template>
+    </aside>
+  </section>
+
+  <!-- PAYMENT MODAL -->
+  <div class="overlay" *ngIf="payOpen()">
+    <div class="modal">
+      <div class="modal__head">
+        <div>
+          <strong>Registrar pago</strong>
+          <div class="muted" *ngIf="selected() as ap">Turno #{{ ap.id }}</div>
+        </div>
+        <button class="x" type="button" (click)="closePayment()">×</button>
+      </div>
+
+      <div class="modal__body" *ngIf="selected() as ap">
+        <label class="mfield">
+          <span>Monto</span>
+          <input class="minput" type="text" inputmode="decimal" placeholder="Ej: 30000" [value]="payAmount()"
+            (input)="payAmount.set(($any($event.target)).value)" />
+        </label>
+
+        <label class="mfield">
+          <span>Método</span>
+          <select class="mselect" [value]="payMethod()" (change)="payMethod.set(($any($event.target)).value)">
+            <option value="CASH">Efectivo</option>
+            <option value="TRANSFER">Transferencia</option>
+            <option value="CARD">Tarjeta</option>
+          </select>
+        </label>
+
+        <label class="mfield">
+          <span>Nota (opcional)</span>
+          <input class="minput" type="text" placeholder="Referencia / observación" [value]="payNote()"
+            (input)="payNote.set(($any($event.target)).value)" />
+        </label>
+
+        <div class="modal__actions">
+          <button class="btn btn--ghost" type="button" (click)="closePayment()">Cancelar</button>
+          <button class="btn btn--primary" type="button" [disabled]="busyId() === ap.id" (click)="savePayment(ap)">
+            {{ busyId() === ap.id ? 'Guardando…' : 'Guardar pago' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" *ngIf="toast()">
+    {{ toast() }}
+  </div>
+</section>

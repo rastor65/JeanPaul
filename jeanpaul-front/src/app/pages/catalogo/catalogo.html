@@ -1,0 +1,468 @@
+<section class="page">
+  <header class="top">
+    <div class="title">
+      <div class="mark" aria-hidden="true">JP</div>
+      <div class="title__text">
+        <h1>Catálogo</h1>
+        <p>Gestiona servicios y categorías para las reservas</p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn--ghost" type="button" (click)="loadAll()" [disabled]="loading()">
+        {{ loading() ? 'Cargando…' : 'Actualizar' }}
+      </button>
+
+      <div class="tabs">
+        <button class="tab" [class.on]="tab()==='SERVICES'" type="button" (click)="setTab('SERVICES')">Servicios</button>
+        <button class="tab" [class.on]="tab()==='CATEGORIES'" type="button" (click)="setTab('CATEGORIES')">Categorías</button>
+      </div>
+
+      <ng-container *ngIf="tab()==='SERVICES'">
+        <button class="btn btn--primary" type="button" (click)="openCreateService()">Nuevo servicio</button>
+      </ng-container>
+
+      <ng-container *ngIf="tab()==='CATEGORIES'">
+        <button class="btn btn--primary" type="button" (click)="openCreateCategory()">Nueva categoría</button>
+      </ng-container>
+    </div>
+  </header>
+
+  <div class="alert" *ngIf="error()">
+    <strong>Atención:</strong> {{ error() }}
+  </div>
+
+  <!-- SERVICES -->
+  <section class="panel" *ngIf="tab()==='SERVICES'">
+    <div class="panel__head">
+      <div class="headLeft">
+        <h2>Servicios</h2>
+
+        <div class="kpis">
+          <span class="kpi">Total: <strong>{{ svcCounts().all }}</strong></span>
+          <span class="kpi ok">Activos: <strong>{{ svcCounts().active }}</strong></span>
+          <span class="kpi warn">Inactivos: <strong>{{ svcCounts().inactive }}</strong></span>
+        </div>
+
+        <p class="muted">{{ filteredServices().length }} de {{ services().length }} (según filtros)</p>
+      </div>
+
+      <div class="filters">
+        <div class="field">
+          <span class="icon" aria-hidden="true">⌕</span>
+          <input
+            class="in"
+            type="search"
+            placeholder="Buscar por nombre, categoría o descripción…"
+            [value]="sQuery()"
+            (input)="sQuery.set(($any($event.target)).value)"
+          />
+        </div>
+
+        <select class="sel" [value]="sShow()" (change)="sShow.set(($any($event.target)).value)">
+          <option value="ALL">Todos</option>
+          <option value="ACTIVE">Solo activos</option>
+          <option value="INACTIVE">Solo inactivos</option>
+        </select>
+
+        <select class="sel" [value]="sCat()" (change)="sCat.set(($any($event.target)).value==='ALL' ? 'ALL' : +($any($event.target)).value)">
+          <option value="ALL">Todas las categorías</option>
+          <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
+        </select>
+
+        <button class="btn btn--ghost" type="button" (click)="resetServiceFilters()">Limpiar filtros</button>
+      </div>
+    </div>
+
+    <!-- Mobile cards -->
+    <div class="cards">
+      <article class="card" *ngFor="let s of filteredServices()">
+        <div class="card__top">
+          <div>
+            <strong class="card__title">{{ s.name }}</strong>
+            <div class="sub">{{ s.category.name }}</div>
+          </div>
+
+          <label class="switch" title="Activar / desactivar">
+            <input type="checkbox" [checked]="s.active" (change)="toggleServiceActive(s)" />
+            <span></span>
+          </label>
+        </div>
+
+        <div class="card__meta">
+          <div><span class="mkey">Duración</span><span class="mval">{{ s.duration_minutes }} min</span></div>
+          <div><span class="mkey">Márgenes</span><span class="mval">{{ s.buffer_before_minutes }} / {{ s.buffer_after_minutes }} min</span></div>
+          <div><span class="mkey">Tiempo total</span><span class="mval">{{ totalMinutes(s) }} min</span></div>
+          <div><span class="mkey">Precio</span><span class="mval">$ {{ priceLabel(s.price) }}</span></div>
+          <div><span class="mkey">Asignación</span><span class="mval"><span class="pill">{{ assignmentLabel(s.assignment_type) }}</span></span></div>
+          <div *ngIf="s.assignment_type==='FIXED_WORKER'">
+            <span class="mkey">Trabajador fijo</span><span class="mval">{{ s.fixed_worker_label || '—' }}</span>
+          </div>
+        </div>
+
+        <div class="card__desc" *ngIf="s.description">{{ s.description }}</div>
+
+        <div class="card__actions">
+          <button class="mini" type="button" (click)="openEditService(s)">Editar</button>
+          <button class="mini danger" type="button" (click)="deleteService(s)">Eliminar</button>
+        </div>
+      </article>
+
+      <div class="emptyCard" *ngIf="!loading() && filteredServices().length===0">
+        No hay resultados con los filtros actuales.
+      </div>
+    </div>
+
+    <!-- Desktop table -->
+    <div class="tableWrap tableOnly">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Activo</th>
+            <th>Servicio</th>
+            <th>Categoría</th>
+            <th>Duración</th>
+            <th>Márgenes (A/D)</th>
+            <th>Tiempo total</th>
+            <th>Precio</th>
+            <th>Asignación</th>
+            <th>Trabajador fijo</th>
+            <th class="right">Acciones</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr *ngFor="let s of filteredServices()">
+            <td>
+              <label class="switch">
+                <input type="checkbox" [checked]="s.active" (change)="toggleServiceActive(s)" />
+                <span></span>
+              </label>
+            </td>
+
+            <td>
+              <strong>{{ s.name }}</strong>
+              <div class="sub" *ngIf="s.description">{{ s.description }}</div>
+            </td>
+
+            <td>{{ s.category.name }}</td>
+            <td>{{ s.duration_minutes }} min</td>
+            <td>{{ s.buffer_before_minutes }} / {{ s.buffer_after_minutes }} min</td>
+            <td>{{ totalMinutes(s) }} min</td>
+            <td>$ {{ priceLabel(s.price) }}</td>
+
+            <td>
+              <span class="pill" [title]="assignmentHelp(s.assignment_type)">{{ assignmentLabel(s.assignment_type) }}</span>
+            </td>
+
+            <td>{{ s.assignment_type==='FIXED_WORKER' ? (s.fixed_worker_label || '—') : '—' }}</td>
+
+            <td class="right">
+              <button class="mini" type="button" (click)="openEditService(s)">Editar</button>
+              <button class="mini danger" type="button" (click)="deleteService(s)">Eliminar</button>
+            </td>
+          </tr>
+
+          <tr *ngIf="!loading() && filteredServices().length===0">
+            <td colspan="10" class="empty">
+              No hay resultados con los filtros actuales.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- CATEGORIES -->
+  <section class="panel" *ngIf="tab()==='CATEGORIES'">
+    <div class="panel__head">
+      <div class="headLeft">
+        <h2>Categorías</h2>
+
+        <div class="kpis">
+          <span class="kpi">Total: <strong>{{ catCounts().all }}</strong></span>
+          <span class="kpi ok">Activas: <strong>{{ catCounts().active }}</strong></span>
+          <span class="kpi warn">Inactivas: <strong>{{ catCounts().inactive }}</strong></span>
+        </div>
+
+        <p class="muted">{{ filteredCategories().length }} de {{ categories().length }} (según filtros)</p>
+      </div>
+
+      <div class="filters">
+        <div class="field">
+          <span class="icon" aria-hidden="true">⌕</span>
+          <input class="in" type="search" placeholder="Buscar categoría…" [value]="cQuery()" (input)="cQuery.set(($any($event.target)).value)" />
+        </div>
+
+        <select class="sel" [value]="cShow()" (change)="cShow.set(($any($event.target)).value)">
+          <option value="ALL">Todas</option>
+          <option value="ACTIVE">Solo activas</option>
+          <option value="INACTIVE">Solo inactivas</option>
+        </select>
+
+        <button class="btn btn--ghost" type="button" (click)="resetCategoryFilters()">Limpiar filtros</button>
+      </div>
+    </div>
+
+    <!-- Mobile cards -->
+    <div class="cards">
+      <article class="card" *ngFor="let c of filteredCategories()">
+        <div class="card__top">
+          <div>
+            <strong class="card__title">{{ c.name }}</strong>
+            <div class="sub">Servicios asociados: {{ categoryServiceCount(c.id) }}</div>
+          </div>
+
+          <label class="switch" title="Activar / desactivar">
+            <input type="checkbox" [checked]="c.active !== false" (change)="toggleCategoryActive(c)" />
+            <span></span>
+          </label>
+        </div>
+
+        <div class="card__meta">
+          <div>
+            <span class="mkey">Trabajador fijo por defecto</span>
+            <span class="mval">{{ c.default_fixed_worker_label || '—' }}</span>
+          </div>
+        </div>
+
+        <div class="card__actions">
+          <button class="mini" type="button" (click)="openEditCategory(c)">Editar</button>
+          <button class="mini danger" type="button" (click)="deleteCategory(c)">Eliminar</button>
+        </div>
+      </article>
+
+      <div class="emptyCard" *ngIf="!loading() && filteredCategories().length===0">
+        No hay resultados con los filtros actuales.
+      </div>
+    </div>
+
+    <!-- Desktop table -->
+    <div class="tableWrap tableOnly">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Activa</th>
+            <th>Nombre</th>
+            <th>Servicios</th>
+            <th>Trabajador fijo por defecto</th>
+            <th class="right">Acciones</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr *ngFor="let c of filteredCategories()">
+            <td>
+              <label class="switch">
+                <input type="checkbox" [checked]="c.active !== false" (change)="toggleCategoryActive(c)" />
+                <span></span>
+              </label>
+            </td>
+
+            <td><strong>{{ c.name }}</strong></td>
+            <td>{{ categoryServiceCount(c.id) }}</td>
+            <td>{{ c.default_fixed_worker_label || '—' }}</td>
+
+            <td class="right">
+              <button class="mini" type="button" (click)="openEditCategory(c)">Editar</button>
+              <button class="mini danger" type="button" (click)="deleteCategory(c)">Eliminar</button>
+            </td>
+          </tr>
+
+          <tr *ngIf="!loading() && filteredCategories().length===0">
+            <td colspan="5" class="empty">
+              No hay resultados con los filtros actuales.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SERVICE MODAL -->
+  <div class="overlay" *ngIf="svcModalOpen()">
+    <div class="modal">
+      <div class="modal__head">
+        <div>
+          <strong>{{ svcId() ? 'Editar servicio' : 'Nuevo servicio' }}</strong>
+          <div class="muted">Configura duración, precio, márgenes y asignación</div>
+        </div>
+        <button class="x" type="button" (click)="closeServiceModal()" aria-label="Cerrar">×</button>
+      </div>
+
+      <div class="modal__body">
+        <div class="section">
+          <div class="section__title">Información básica</div>
+
+          <label class="mfield">
+            <span>Nombre del servicio</span>
+            <input class="minput" type="text" autocomplete="off" [value]="svcName()" (input)="svcName.set(($any($event.target)).value)" />
+          </label>
+
+          <label class="mfield">
+            <span>Categoría</span>
+            <select class="mselect" [value]="svcCategoryId()" (change)="svcCategoryId.set(+($any($event.target)).value)">
+              <option *ngFor="let c of categories()" [value]="c.id">{{ c.name }}</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="section">
+          <div class="section__title">Agenda y precio</div>
+
+          <div class="grid2">
+            <label class="mfield">
+              <span>Duración (minutos)</span>
+              <input class="minput" type="number" min="0" [value]="svcDuration()" (input)="svcDuration.set(+($any($event.target)).value)" />
+            </label>
+
+            <label class="mfield">
+              <span>Precio</span>
+              <input class="minput" type="text" inputmode="decimal" [value]="svcPrice()" (input)="svcPrice.set(($any($event.target)).value)" />
+              <small class="hint">Ejemplo: 25000</small>
+            </label>
+          </div>
+
+          <div class="grid2">
+            <label class="mfield">
+              <span>Margen antes (min)</span>
+              <input class="minput" type="number" min="0" [value]="svcBufBefore()" (input)="svcBufBefore.set(+($any($event.target)).value)" />
+            </label>
+
+            <label class="mfield">
+              <span>Margen después (min)</span>
+              <input class="minput" type="number" min="0" [value]="svcBufAfter()" (input)="svcBufAfter.set(+($any($event.target)).value)" />
+            </label>
+          </div>
+
+          <div class="hint">
+            Tiempo total estimado: <strong>{{ (svcDuration()||0) + (svcBufBefore()||0) + (svcBufAfter()||0) }} min</strong>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section__title">Asignación</div>
+
+          <label class="mfield">
+            <span>Tipo de asignación</span>
+            <select class="mselect" [value]="svcAssign()" (change)="svcAssign.set(($any($event.target)).value)">
+              <option value="ROLE_BASED">Por rol (disponible)</option>
+              <option value="FIXED_WORKER">Trabajador fijo</option>
+            </select>
+            <small class="hint">{{ assignmentHelp(svcAssign()) }}</small>
+          </label>
+
+          <label class="mfield" *ngIf="svcAssign()==='FIXED_WORKER'">
+            <span>Trabajador fijo</span>
+            <select
+              class="mselect"
+              [value]="svcFixedWorkerId() ?? ''"
+              (change)="svcFixedWorkerId.set(($any($event.target)).value ? +($any($event.target)).value : null)"
+            >
+              <option value="">Selecciona…</option>
+              <option *ngFor="let w of workers()" [value]="w.id">{{ w.label }}</option>
+            </select>
+
+            <small class="hint" *ngIf="workers().length===0">
+              No hay lista de trabajadores disponible para seleccionar.
+            </small>
+          </label>
+        </div>
+
+        <div class="section">
+          <div class="section__title">Detalles</div>
+
+          <label class="mfield">
+            <span>Descripción (opcional)</span>
+            <textarea class="mtextarea" rows="3" [value]="svcDesc()" (input)="svcDesc.set(($any($event.target)).value)"></textarea>
+          </label>
+
+          <label class="mfield">
+            <span>Requisitos (opcional)</span>
+            <textarea class="mtextarea" rows="3" [value]="svcReq()" (input)="svcReq.set(($any($event.target)).value)"></textarea>
+          </label>
+
+          <label class="ck">
+            <input type="checkbox" [checked]="svcActive()" (change)="svcActive.set(($any($event.target)).checked)" />
+            <span>Servicio activo</span>
+          </label>
+        </div>
+
+        <div class="modal__actions">
+          <button class="btn btn--ghost" type="button" (click)="closeServiceModal()">Cancelar</button>
+          <button class="btn btn--primary" type="button" (click)="saveService()" [disabled]="loading()">
+            {{ loading() ? 'Guardando…' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CATEGORY MODAL -->
+  <div class="overlay" *ngIf="catModalOpen()">
+    <div class="modal">
+      <div class="modal__head">
+        <div>
+          <strong>{{ catId() ? 'Editar categoría' : 'Nueva categoría' }}</strong>
+          <div class="muted">Controla visibilidad y trabajador fijo por defecto (opcional)</div>
+        </div>
+        <button class="x" type="button" (click)="closeCategoryModal()" aria-label="Cerrar">×</button>
+      </div>
+
+      <div class="modal__body">
+        <label class="mfield">
+          <span>Nombre de la categoría</span>
+          <input class="minput" type="text" autocomplete="off" [value]="catName()" (input)="catName.set(($any($event.target)).value)" />
+        </label>
+
+        <label class="mfield">
+          <span>Trabajador fijo por defecto (opcional)</span>
+          <select
+            class="mselect"
+            [value]="catDefaultWorker() ?? ''"
+            (change)="catDefaultWorker.set(($any($event.target)).value ? +($any($event.target)).value : null)"
+          >
+            <option value="">—</option>
+            <option *ngFor="let w of workers()" [value]="w.id">{{ w.label }}</option>
+          </select>
+        </label>
+
+        <label class="ck">
+          <input type="checkbox" [checked]="catActive()" (change)="catActive.set(($any($event.target)).checked)" />
+          <span>Categoría activa</span>
+        </label>
+
+        <div class="modal__actions">
+          <button class="btn btn--ghost" type="button" (click)="closeCategoryModal()">Cancelar</button>
+          <button class="btn btn--primary" type="button" (click)="saveCategory()" [disabled]="loading()">
+            {{ loading() ? 'Guardando…' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIRM MODAL -->
+  <div class="overlay" *ngIf="confirmOpen()">
+    <div class="modal modal--confirm">
+      <div class="modal__head">
+        <div>
+          <strong>{{ confirmTitle() }}</strong>
+          <div class="muted">{{ confirmMsg() }}</div>
+        </div>
+        <button class="x" type="button" (click)="closeConfirm()" aria-label="Cerrar">×</button>
+      </div>
+
+      <div class="modal__body">
+        <div class="modal__actions">
+          <button class="btn btn--ghost" type="button" (click)="closeConfirm()" [disabled]="confirmBusy()">Cancelar</button>
+          <button class="btn btn--danger" type="button" (click)="confirmYes()" [disabled]="confirmBusy()">
+            {{ confirmBusy() ? 'Procesando…' : 'Sí, eliminar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" *ngIf="toast()">{{ toast() }}</div>
+</section>

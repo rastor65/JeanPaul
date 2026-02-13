@@ -1,0 +1,856 @@
+<div class="page" [class.is-loading]="loading">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="title">
+        <h1>Horarios</h1>
+        <p>Asigna jornadas, descansos y excepciones por trabajador, con vista previa.</p>
+      </div>
+
+      <div class="helpbar" *ngIf="selectedWorker">
+        <div class="help-step">
+          <span class="n">1</span>
+          <span class="t">Elige trabajador</span>
+        </div>
+        <div class="sep"></div>
+        <div class="help-step">
+          <span class="n">2</span>
+          <span class="t">Define jornada</span>
+        </div>
+        <div class="sep"></div>
+        <div class="help-step">
+          <span class="n">3</span>
+          <span class="t">Agrega descansos</span>
+        </div>
+        <div class="sep"></div>
+        <div class="help-step">
+          <span class="n">4</span>
+          <span class="t">Excepciones (si aplica)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <button class="btn ghost" type="button" (click)="loadWorkers()" [disabled]="loading">
+        Recargar
+      </button>
+
+      <button class="btn ghost" type="button" (click)="openCopyWeek()" [disabled]="loading || !selectedWorker">
+        Copiar semana
+      </button>
+
+      <button class="btn" type="button" (click)="openBulk()" [disabled]="loading || !selectedWorker">
+        Acción masiva
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar: Workers -->
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <h2>Trabajadores</h2>
+
+        <form class="filters" [formGroup]="filterForm" autocomplete="off">
+          <div class="filter-row">
+            <input class="input" type="search" placeholder="Buscar por nombre…" formControlName="q" />
+          </div>
+
+          <div class="filter-row two">
+            <select class="select" formControlName="role">
+              <option value="ALL">Rol: Todos</option>
+              <option value="BARBER">Barbero</option>
+              <option value="NAILS">Uñas</option>
+              <option value="FACIAL">Facial</option>
+              <option value="STAFF">Recepción</option>
+              <option value="ADMIN">Admin</option>
+            </select>
+
+            <select class="select" formControlName="active">
+              <option value="ALL">Estado: Todos</option>
+              <option value="ACTIVE">Activos</option>
+              <option value="INACTIVE">Inactivos</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="worker-list">
+        <ng-container *ngIf="workerGroups.length > 0; else emptyWorkers">
+          <div class="worker-group" *ngFor="let g of workerGroups">
+            <div class="group-head">
+              <div class="group-title">
+                <span class="gt">{{ g.title }}</span>
+                <span class="gc">{{ g.count }}</span>
+              </div>
+
+              <button class="mini-btn ghost" type="button" (click)="openCategoryBulk(g.role)" [disabled]="loading">
+                Editar categoría
+              </button>
+            </div>
+
+            <button class="worker-item" type="button" *ngFor="let w of g.workers; trackBy: trackById"
+              (click)="selectWorker(w)" [class.active]="selectedWorker?.id === w.id">
+              <div class="avatar" aria-hidden="true">
+                <span>{{ (w.label || 'W').slice(0,1).toUpperCase() }}</span>
+              </div>
+
+              <div class="meta">
+                <div class="name">{{ w.label }}</div>
+                <div class="sub">
+                  <span class="pill" [class.off]="w.active === false">
+                    {{ w.active === false ? 'Inactivo' : 'Activo' }}
+                  </span>
+                  <span class="dot-sep">•</span>
+                  <span class="role">{{ w.role || '—' }}</span>
+                </div>
+              </div>
+            </button>
+          </div>
+        </ng-container>
+
+        <ng-template #emptyWorkers>
+          <div class="empty">
+            <p>No hay trabajadores con esos filtros.</p>
+          </div>
+        </ng-template>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="content">
+      <!-- Selected worker / Tabs -->
+      <section class="content-head">
+        <div class="who">
+          <div class="who-title">
+            <h2>
+              <ng-container *ngIf="selectedWorker; else noSel">
+                {{ selectedWorker.label }}
+              </ng-container>
+              <ng-template #noSel>Horarios</ng-template>
+            </h2>
+
+            <p *ngIf="selectedWorker">
+              Vista rápida por día: la barra muestra Libre / Descanso / Ausente / Cerrado.
+            </p>
+            <p *ngIf="!selectedWorker">
+              Selecciona un trabajador para ver y editar su agenda.
+            </p>
+
+            <!-- Plantillas rápidas -->
+            <div class="templates" *ngIf="selectedWorker">
+              <div class="templates-title">Plantillas rápidas:</div>
+              <button class="chip" type="button" (click)="askApplyWeekTemplate('WEEKDAYS_9_19')" [disabled]="loading">
+                Lun–Vie 09–19
+              </button>
+              <button class="chip" type="button" (click)="askApplyWeekTemplate('WEEKDAYS_10_20')" [disabled]="loading">
+                Lun–Vie 10–20
+              </button>
+              <button class="chip ghost" type="button" (click)="askApplyWeekTemplate('ALLDAYS_9_19')"
+                [disabled]="loading">
+                Lun–Dom 09–19
+              </button>
+            </div>
+          </div>
+
+          <div class="tabs" *ngIf="selectedWorker">
+            <button class="tab" type="button" [class.active]="viewMode === 'WEEK'" (click)="viewMode='WEEK'">
+              Semana
+            </button>
+            <button class="tab" type="button" [class.active]="viewMode === 'EXCEPTIONS'"
+              (click)="viewMode='EXCEPTIONS'">
+              Excepciones
+            </button>
+            <button class="tab" type="button" [class.active]="viewMode === 'SIMULATOR'" (click)="viewMode='SIMULATOR'">
+              Simulador
+            </button>
+          </div>
+        </div>
+
+        <!-- Week toolbar -->
+        <div class="weekbar" *ngIf="selectedWorker && viewMode !== 'SIMULATOR'">
+          <div class="week-nav">
+            <button class="icon-btn" type="button" (click)="prevWeek()" [disabled]="loading">‹</button>
+            <button class="icon-btn" type="button" (click)="goToday()" [disabled]="loading">Hoy</button>
+            <button class="icon-btn" type="button" (click)="nextWeek()" [disabled]="loading">›</button>
+          </div>
+
+          <div class="week-pick">
+            <label class="label">Semana (lunes)</label>
+            <input class="input" type="date" [value]="toISODate(weekStart)" (change)="onPickWeekStart($event)" />
+          </div>
+
+          <div class="week-summary">
+            <div class="summary-pill">
+              <span class="k">Reglas</span>
+              <span class="v">{{ rules.length }}</span>
+            </div>
+            <div class="summary-pill">
+              <span class="k">Descansos</span>
+              <span class="v">{{ breaks.length }}</span>
+            </div>
+            <div class="summary-pill">
+              <span class="k">Excepciones</span>
+              <span class="v">{{ exceptions.length }}</span>
+            </div>
+          </div>
+
+          <!-- Leyenda única -->
+          <div class="legend">
+            <div class="lg"><span class="lg-dot free"></span> Libre</div>
+            <div class="lg"><span class="lg-dot break"></span> Descanso</div>
+            <div class="lg"><span class="lg-dot off"></span> Ausente</div>
+            <div class="lg"><span class="lg-dot closed"></span> Cerrado</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- WEEK VIEW -->
+      <section class="week-grid" *ngIf="selectedWorker && viewMode === 'WEEK'">
+        <article class="day-card" *ngFor="let d of weekDays; trackBy: trackByISO">
+          <header class="day-head">
+            <div class="day-title">
+              <div class="day-name">{{ d.label }}</div>
+              <div class="day-date">{{ d.iso }}</div>
+            </div>
+
+            <div class="day-actions">
+              <button class="mini-btn ghost" type="button" (click)="openRuleEditor(d.dow)" [disabled]="loading">
+                Jornada
+              </button>
+
+              <button class="mini-btn ghost" type="button" (click)="openBreakEditor(d.dow)" [disabled]="loading">
+                Descanso
+              </button>
+
+              <button class="mini-btn ghost" type="button" (click)="openExceptionEditor(d.iso)" [disabled]="loading">
+                Excepción
+              </button>
+            </div>
+          </header>
+
+          <!-- Timeline visual -->
+          <div class="day-timeline">
+            <div class="tl-labels">
+              <span>{{ timelineStartLabel }}</span>
+              <span>{{ timelineEndLabel }}</span>
+            </div>
+
+            <div class="tl-bar" [style.--cells]="timelineCellsCount">
+              <div class="tl-seg" *ngFor="let c of timelineForISO(d.iso); trackBy: trackByIdx" [class]="cellClass(c)"
+                [attr.title]="c.title"></div>
+            </div>
+
+            <div class="tl-note" *ngIf="!dayHasAnything(d.dow, d.iso)">
+              Sin configuración: aplica una plantilla o crea una jornada para este día.
+            </div>
+          </div>
+
+          <!-- Regla -->
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title">Jornada</span>
+              <ng-container *ngIf="ruleForDow(d.dow) as r; else noRule">
+                <span class="badge" [class.off]="!r.active">
+                  {{ r.active ? 'Activa' : 'Inactiva' }}
+                </span>
+              </ng-container>
+            </div>
+
+            <ng-container *ngIf="ruleForDow(d.dow) as r; else noRule">
+              <div class="row">
+                <span class="strong">{{ r.start_time }} — {{ r.end_time }}</span>
+                <span class="muted">({{ r.active ? 'Disponible' : 'No disponible' }})</span>
+              </div>
+
+              <div class="row actions-row">
+                <button class="chip" type="button" (click)="openRuleEditor(d.dow)" [disabled]="loading">Editar</button>
+                <button class="chip" type="button" *ngIf="d.dow > 0" (click)="askCopyPreviousDay(d.dow)"
+                  [disabled]="loading">
+                  Copiar día anterior
+                </button>
+                <button class="chip danger" type="button" (click)="askDeleteRule(r)"
+                  [disabled]="loading">Eliminar</button>
+              </div>
+            </ng-container>
+
+            <ng-template #noRule>
+              <div class="empty-mini">
+                No hay jornada configurada.
+                <button class="chip" type="button" (click)="openRuleEditor(d.dow)" [disabled]="loading">Crear</button>
+                <button class="chip" type="button" *ngIf="d.dow>0" (click)="askCopyPreviousDay(d.dow)"
+                  [disabled]="loading">
+                  Copiar día anterior
+                </button>
+              </div>
+            </ng-template>
+          </div>
+
+          <!-- Descansos -->
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title">Descansos</span>
+              <span class="count">{{ breaksForDow(d.dow).length }}</span>
+            </div>
+
+            <div class="list" *ngIf="breaksForDow(d.dow).length > 0; else noBreaks">
+              <div class="list-item" *ngFor="let b of breaksForDow(d.dow); trackBy: trackById">
+                <div class="li-main">
+                  <div class="li-title">{{ b.start_time }} — {{ b.end_time }}</div>
+                  <div class="li-sub">Bloqueo interno</div>
+                </div>
+
+                <div class="li-actions">
+                  <button class="icon-chip" type="button" (click)="openBreakEditor(d.dow, b)" [disabled]="loading">
+                    Editar
+                  </button>
+                  <button class="icon-chip danger" type="button" (click)="askDeleteBreak(b)" [disabled]="loading">
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <ng-template #noBreaks>
+              <div class="empty-mini">Sin descansos.</div>
+            </ng-template>
+          </div>
+
+          <!-- Excepciones -->
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title">Excepciones</span>
+              <span class="count">{{ exceptionsForISO(d.iso).length }}</span>
+            </div>
+
+            <div class="list" *ngIf="exceptionsForISO(d.iso).length > 0; else noEx">
+              <div class="list-item" *ngFor="let e of exceptionsForISO(d.iso); trackBy: trackById">
+                <div class="li-main">
+                  <div class="li-title">
+                    <span class="badge" [class.alt]="e.type === 'EXTRA_WORKING'">{{ exBadge(e) }}</span>
+                    <span class="sp"></span>
+                    <span class="strong">
+                      <ng-container *ngIf="e.start_time && e.end_time; else fullDay">
+                        {{ e.start_time }} — {{ e.end_time }}
+                      </ng-container>
+                      <ng-template #fullDay>Día completo</ng-template>
+                    </span>
+                  </div>
+
+                  <div class="li-sub" *ngIf="e.note">{{ e.note }}</div>
+                  <div class="li-sub" *ngIf="!e.note">—</div>
+                </div>
+
+                <div class="li-actions">
+                  <button class="icon-chip" type="button" (click)="openExceptionEditor(d.iso, e)" [disabled]="loading">
+                    Editar
+                  </button>
+                  <button class="icon-chip danger" type="button" (click)="askDeleteException(e)" [disabled]="loading">
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <ng-template #noEx>
+              <div class="empty-mini">Sin excepciones.</div>
+            </ng-template>
+          </div>
+        </article>
+      </section>
+
+      <!-- EXCEPTIONS VIEW -->
+      <section class="exceptions" *ngIf="selectedWorker && viewMode === 'EXCEPTIONS'">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3>Excepciones de la semana</h3>
+              <p>Ausencias y jornadas extra aplicadas por fecha.</p>
+            </div>
+
+            <button class="btn" type="button" (click)="openExceptionEditor(weekDays[0].iso)" [disabled]="loading">
+              Agregar excepción
+            </button>
+          </div>
+
+          <div class="week-lines">
+            <div class="week-line" *ngFor="let d of weekDays; trackBy: trackByISO">
+              <div class="wl-date">
+                <div class="wl-day">{{ d.label }}</div>
+                <div class="wl-iso">{{ d.iso }}</div>
+              </div>
+
+              <div class="wl-items" *ngIf="exceptionsForISO(d.iso).length > 0; else wlEmpty">
+                <div class="wl-item" *ngFor="let e of exceptionsForISO(d.iso); trackBy: trackById">
+                  <div class="wl-left">
+                    <span class="badge" [class.alt]="e.type === 'EXTRA_WORKING'">{{ exBadge(e) }}</span>
+                    <span class="strong">
+                      <ng-container *ngIf="e.start_time && e.end_time; else wlFull">
+                        {{ e.start_time }} — {{ e.end_time }}
+                      </ng-container>
+                      <ng-template #wlFull> Día completo </ng-template>
+                    </span>
+                    <span class="muted" *ngIf="e.note">• {{ e.note }}</span>
+                  </div>
+
+                  <div class="wl-actions">
+                    <button class="chip" type="button" (click)="openExceptionEditor(d.iso, e)" [disabled]="loading">
+                      Editar
+                    </button>
+                    <button class="chip danger" type="button" (click)="askDeleteException(e)" [disabled]="loading">
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <ng-template #wlEmpty>
+                <div class="wl-empty">
+                  <span class="muted">Sin excepciones</span>
+                  <button class="chip" type="button" (click)="openExceptionEditor(d.iso)" [disabled]="loading">
+                    Agregar
+                  </button>
+                </div>
+              </ng-template>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SIMULATOR VIEW -->
+      <section class="simulator" *ngIf="selectedWorker && viewMode === 'SIMULATOR'">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3>Simulador de disponibilidad</h3>
+              <p>Usará semana, descansos y excepciones para validar turnos.</p>
+            </div>
+
+            <button class="btn ghost" type="button" (click)="viewMode='WEEK'">Volver a semana</button>
+          </div>
+
+          <div class="placeholder">
+            <div class="ph">
+              <div class="ph-title">Siguiente paso</div>
+              <ul class="ph-list">
+                <li>Elegir fecha y servicios</li>
+                <li>Ver bloques libres por intervalos</li>
+                <li>Detectar conflictos por descansos/excepciones</li>
+                <li>Probar lógica de “NEAREST” para barberos</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Empty state -->
+      <section class="empty-state" *ngIf="!selectedWorker && !loading">
+        <div class="card">
+          <h3>Selecciona un trabajador</h3>
+          <p>Usa la lista de la izquierda para cargar sus horarios.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Drawer -->
+  <div class="drawer-backdrop" *ngIf="drawerOpen" (click)="closeDrawer()"></div>
+
+  <aside class="drawer" *ngIf="drawerOpen" role="dialog" aria-modal="true">
+    <header class="drawer-head">
+      <div class="drawer-title">
+        <h3>{{ drawerTitle }}</h3>
+        <p *ngIf="selectedWorker">{{ selectedWorker.label }}</p>
+      </div>
+      <button class="icon-btn" type="button" (click)="closeDrawer()" aria-label="Cerrar">✕</button>
+    </header>
+
+    <div class="drawer-body">
+      <!-- RULE -->
+      <form *ngIf="drawerMode==='RULE'" class="form" [formGroup]="ruleForm">
+        <div class="preset-row">
+          <button class="preset" type="button" *ngFor="let p of rulePresets" (click)="setRulePreset(p.start, p.end)">
+            {{ p.label }}
+          </button>
+          <button class="preset ghost" type="button" (click)="setRuleClosed()">Marcar inactiva</button>
+        </div>
+
+        <div class="grid two">
+          <div class="field">
+            <label>Día</label>
+            <select class="select" formControlName="day_of_week">
+              <option [value]="0">Lunes</option>
+              <option [value]="1">Martes</option>
+              <option [value]="2">Miércoles</option>
+              <option [value]="3">Jueves</option>
+              <option [value]="4">Viernes</option>
+              <option [value]="5">Sábado</option>
+              <option [value]="6">Domingo</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Estado</label>
+            <label class="switch">
+              <input type="checkbox" formControlName="active" />
+              <span class="track"><span class="thumb"></span></span>
+              <span class="txt">Activa</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="field">
+            <label>Inicio</label>
+            <input class="input" type="time" formControlName="start_time" />
+          </div>
+
+          <div class="field">
+            <label>Fin</label>
+            <input class="input" type="time" formControlName="end_time" />
+          </div>
+        </div>
+
+        <div class="hint-box">
+          La jornada define el rango base. Descansos recortan disponibilidad. Excepciones pueden bloquear o ampliar.
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" type="button" (click)="closeDrawer()">Cancelar</button>
+          <button class="btn" type="button" (click)="saveRule()" [disabled]="loading">Guardar</button>
+        </div>
+      </form>
+
+      <!-- BREAK -->
+      <form *ngIf="drawerMode==='BREAK'" class="form" [formGroup]="breakForm">
+        <div class="preset-row">
+          <button class="preset" type="button" *ngFor="let p of breakPresets" (click)="setBreakPreset(p.start, p.end)">
+            {{ p.label }}
+          </button>
+        </div>
+
+        <div class="grid two">
+          <div class="field">
+            <label>Día</label>
+            <select class="select" formControlName="day_of_week">
+              <option [value]="0">Lunes</option>
+              <option [value]="1">Martes</option>
+              <option [value]="2">Miércoles</option>
+              <option [value]="3">Jueves</option>
+              <option [value]="4">Viernes</option>
+              <option [value]="5">Sábado</option>
+              <option [value]="6">Domingo</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Tipo</label>
+            <div class="pill-static">Descanso</div>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="field">
+            <label>Inicio</label>
+            <input class="input" type="time" formControlName="start_time" />
+          </div>
+
+          <div class="field">
+            <label>Fin</label>
+            <input class="input" type="time" formControlName="end_time" />
+          </div>
+        </div>
+
+        <div class="hint-box">
+          Se valida que el descanso esté dentro de una jornada activa para evitar configuraciones confusas.
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" type="button" (click)="closeDrawer()">Cancelar</button>
+          <button class="btn" type="button" (click)="saveBreak()" [disabled]="loading">Guardar</button>
+        </div>
+      </form>
+
+      <!-- EXCEPTION -->
+      <form *ngIf="drawerMode==='EXCEPTION'" class="form" [formGroup]="exceptionForm">
+        <div class="preset-row">
+          <button class="preset" type="button" (click)="setExceptionFullDay()">Día completo</button>
+          <button class="preset" type="button" (click)="setExceptionPreset('09:00','12:00')">09:00–12:00</button>
+          <button class="preset" type="button" (click)="setExceptionPreset('15:00','19:00')">15:00–19:00</button>
+        </div>
+
+        <div class="field">
+          <label>Fecha</label>
+          <input class="input" type="date" formControlName="date" />
+        </div>
+
+        <div class="field">
+          <label>Tipo</label>
+          <select class="select" formControlName="type">
+            <option value="TIME_OFF">Ausencia (bloquea)</option>
+            <option value="EXTRA_WORKING">Jornada extra (amplía)</option>
+          </select>
+        </div>
+
+        <div class="grid two">
+          <div class="field">
+            <label>Inicio (opcional)</label>
+            <input class="input" type="time" formControlName="start_time" />
+          </div>
+
+          <div class="field">
+            <label>Fin (opcional)</label>
+            <input class="input" type="time" formControlName="end_time" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Nota (opcional)</label>
+          <input class="input" type="text" placeholder="Ej. Cita médica / Evento / Turno extra…"
+            formControlName="note" />
+        </div>
+
+        <div class="hint-box">
+          Si no defines horas, se aplica a día completo (ideal para vacaciones/festivos).
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" type="button" (click)="closeDrawer()">Cancelar</button>
+          <button class="btn" type="button" (click)="saveException()" [disabled]="loading">Guardar</button>
+        </div>
+      </form>
+
+      <!-- BULK -->
+      <form *ngIf="drawerMode==='BULK'" class="form" [formGroup]="bulkForm">
+        <div class="bulk-top">
+          <div class="bulk-title">Días a aplicar</div>
+          <div class="bulk-actions">
+            <button class="chip" type="button" (click)="bulkSelectDays('WEEKDAYS')">Lun–Vie</button>
+            <button class="chip" type="button" (click)="bulkSelectDays('WEEKEND')">Sáb–Dom</button>
+            <button class="chip" type="button" (click)="bulkSelectDays('ALL')">Todos</button>
+            <button class="chip ghost" type="button" (click)="bulkSelectDays('NONE')">Ninguno</button>
+          </div>
+        </div>
+
+        <div class="days">
+          <label class="check"><input type="checkbox"
+              [formControl]="$any(bulkForm.get('days.0'))" /><span>Lun</span></label>
+          <label class="check"><input type="checkbox"
+              [formControl]="$any(bulkForm.get('days.1'))" /><span>Mar</span></label>
+          <label class="check"><input type="checkbox"
+              [formControl]="$any(bulkForm.get('days.2'))" /><span>Mié</span></label>
+          <label class="check"><input type="checkbox"
+              [formControl]="$any(bulkForm.get('days.3'))" /><span>Jue</span></label>
+          <label class="check"><input type="checkbox"
+              [formControl]="$any(bulkForm.get('days.4'))" /><span>Vie</span></label>
+          <label class="check"><input type="checkbox"
+              [formControl]="$any(bulkForm.get('days.5'))" /><span>Sáb</span></label>
+          <label class="check"><input type="checkbox"
+              [formControl]="$any(bulkForm.get('days.6'))" /><span>Dom</span></label>
+        </div>
+
+        <div class="preset-row">
+          <button class="preset" type="button"
+            (click)="bulkForm.patchValue({start_time:'09:00', end_time:'19:00', active:true})">
+            09:00–19:00
+          </button>
+          <button class="preset" type="button"
+            (click)="bulkForm.patchValue({start_time:'10:00', end_time:'20:00', active:true})">
+            10:00–20:00
+          </button>
+          <button class="preset ghost" type="button" (click)="bulkForm.patchValue({active:false})">
+            Marcar inactiva
+          </button>
+        </div>
+
+        <div class="grid two">
+          <div class="field">
+            <label>Inicio</label>
+            <input class="input" type="time" formControlName="start_time" />
+          </div>
+
+          <div class="field">
+            <label>Fin</label>
+            <input class="input" type="time" formControlName="end_time" />
+          </div>
+        </div>
+
+        <label class="switch">
+          <input type="checkbox" formControlName="active" />
+          <span class="track"><span class="thumb"></span></span>
+          <span class="txt">Jornada activa</span>
+        </label>
+
+        <div class="hint-box">
+          Aplica (crea o actualiza) la jornada en los días seleccionados. Descansos y excepciones no se modifican aquí.
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" type="button" (click)="closeDrawer()">Cancelar</button>
+          <button class="btn" type="button" (click)="applyBulk()" [disabled]="loading">Aplicar</button>
+        </div>
+      </form>
+
+      <!-- COPY -->
+      <form *ngIf="drawerMode==='COPY'" class="form" [formGroup]="copyForm">
+        <div class="field">
+          <label>Copiar a</label>
+          <select class="select" formControlName="target_worker_id">
+            <option [value]="0">Selecciona un trabajador…</option>
+            <option *ngFor="let w of workers; trackBy: trackById" [value]="w.id"
+              [disabled]="w.id === selectedWorker?.id">
+              {{ w.label }}
+            </option>
+          </select>
+        </div>
+
+        <label class="switch">
+          <input type="checkbox" formControlName="copy_breaks" />
+          <span class="track"><span class="thumb"></span></span>
+          <span class="txt">Copiar descansos</span>
+        </label>
+
+        <label class="switch">
+          <input type="checkbox" formControlName="overwrite" />
+          <span class="track"><span class="thumb"></span></span>
+          <span class="txt">Sobrescribir en destino</span>
+        </label>
+
+        <div class="hint-box">
+          Copia jornadas (semana) al trabajador destino. Excepciones por fecha no se copian.
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" type="button" (click)="closeDrawer()">Cancelar</button>
+          <button class="btn" type="button" (click)="copyWeek()" [disabled]="loading">Copiar</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- BULK_CATEGORY -->
+    <form *ngIf="drawerMode==='BULK_CATEGORY'" class="form" [formGroup]="categoryBulkForm">
+      <div class="field">
+        <label>Categoría</label>
+        <select class="select" formControlName="role">
+          <option value="BARBER">Barberos</option>
+          <option value="NAILS">Uñas</option>
+          <option value="FACIAL">Facial</option>
+          <option value="STAFF">Personal</option>
+          <option value="ADMIN">Administración</option>
+          <option value="OTHER">Otros</option>
+        </select>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" formControlName="only_active" />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="txt">Aplicar solo a activos</span>
+      </label>
+
+      <label class="switch">
+        <input type="checkbox" formControlName="overwrite_existing" />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="txt">Sobrescribir si existe</span>
+      </label>
+
+      <div class="bulk-top">
+        <div class="bulk-title">Días a aplicar</div>
+        <div class="bulk-actions">
+          <button class="chip" type="button" (click)="bulkSelectDays('WEEKDAYS')">Lun–Vie</button>
+          <button class="chip" type="button" (click)="bulkSelectDays('WEEKEND')">Sáb–Dom</button>
+          <button class="chip" type="button" (click)="bulkSelectDays('ALL')">Todos</button>
+          <button class="chip ghost" type="button" (click)="bulkSelectDays('NONE')">Ninguno</button>
+        </div>
+      </div>
+
+      <div class="days">
+        <label class="check"><input type="checkbox"
+            [formControl]="$any(categoryBulkForm.get('days.0'))" /><span>Lun</span></label>
+        <label class="check"><input type="checkbox"
+            [formControl]="$any(categoryBulkForm.get('days.1'))" /><span>Mar</span></label>
+        <label class="check"><input type="checkbox"
+            [formControl]="$any(categoryBulkForm.get('days.2'))" /><span>Mié</span></label>
+        <label class="check"><input type="checkbox"
+            [formControl]="$any(categoryBulkForm.get('days.3'))" /><span>Jue</span></label>
+        <label class="check"><input type="checkbox"
+            [formControl]="$any(categoryBulkForm.get('days.4'))" /><span>Vie</span></label>
+        <label class="check"><input type="checkbox"
+            [formControl]="$any(categoryBulkForm.get('days.5'))" /><span>Sáb</span></label>
+        <label class="check"><input type="checkbox"
+            [formControl]="$any(categoryBulkForm.get('days.6'))" /><span>Dom</span></label>
+      </div>
+
+      <div class="preset-row">
+        <button class="preset" type="button"
+          (click)="categoryBulkForm.patchValue({start_time:'09:00', end_time:'19:00', active:true})">
+          09:00–19:00
+        </button>
+        <button class="preset" type="button"
+          (click)="categoryBulkForm.patchValue({start_time:'10:00', end_time:'20:00', active:true})">
+          10:00–20:00
+        </button>
+        <button class="preset ghost" type="button" (click)="categoryBulkForm.patchValue({active:false})">
+          Marcar inactiva
+        </button>
+      </div>
+
+      <div class="grid two">
+        <div class="field">
+          <label>Inicio</label>
+          <input class="input" type="time" formControlName="start_time" />
+        </div>
+        <div class="field">
+          <label>Fin</label>
+          <input class="input" type="time" formControlName="end_time" />
+        </div>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" formControlName="active" />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="txt">Jornada activa</span>
+      </label>
+
+      <div class="hint-box">
+        Esta acción crea/actualiza las jornadas (reglas) de todos los trabajadores de la categoría seleccionada.
+        Descansos y excepciones no se modifican aquí.
+      </div>
+
+      <div class="actions">
+        <button class="btn ghost" type="button" (click)="closeDrawer()">Cancelar</button>
+        <button class="btn" type="button" (click)="applyCategoryBulk()" [disabled]="loading">Aplicar</button>
+      </div>
+    </form>
+  </aside>
+
+  <!-- Confirm dialog -->
+  <div class="confirm-backdrop" *ngIf="confirmOpen" (click)="closeConfirm()"></div>
+  <div class="confirm" *ngIf="confirmOpen" role="dialog" aria-modal="true">
+    <div class="confirm-card">
+      <div class="confirm-head">
+        <h3>{{ confirmTitle }}</h3>
+      </div>
+      <div class="confirm-body">
+        <p>{{ confirmText }}</p>
+      </div>
+      <div class="confirm-actions">
+        <button class="btn ghost" type="button" (click)="closeConfirm()">Cancelar</button>
+        <button class="btn danger" type="button" (click)="runConfirm()" [disabled]="loading">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div class="toasts" aria-live="polite" aria-atomic="true">
+    <div class="toast" *ngFor="let t of toasts; trackBy: trackById" [class.ok]="t.type==='success'"
+      [class.bad]="t.type==='error'" [class.info]="t.type==='info'">
+      <div class="toast-title">{{ t.title }}</div>
+      <div class="toast-msg">{{ t.message }}</div>
+    </div>
+  </div>
+
+  <!-- Loading veil -->
+  <div class="veil" *ngIf="loading">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="veil-text">Procesando…</div>
+  </div>
+</div>

@@ -1,87 +1,222 @@
-from datetime import datetime, time, timedelta
-from django.utils import timezone
-from django.db.models import Prefetch
-from rest_framework.generics import ListAPIView
-from rest_framework.permissions import IsAuthenticated
+from __future__ import annotations
+from django.conf import settings
 
-from accounts.permissions import IsStaffOrAdmin, IsWorker
-from booking.models import Appointment, AppointmentBlock, AppointmentServiceLine
+from datetime import datetime, timedelta
+from typing import Iterable, Optional
+
+from django.db.models import Q
+from django.utils import timezone
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from booking.models import Appointment, AppointmentBlock
 from booking.serializers import AppointmentStaffSerializer, AppointmentWorkerSerializer
 
 
-def _parse_range(request):
+# -----------------------------
+# Roles (robusto / case-insensitive)
+# -----------------------------
+_ROLE_ALIASES = {
+    # Español -> Inglés
+    "BARBERO": "BARBER",
+    "UNAS": "NAILS",
+    "UÑAS": "NAILS",
+    "FACIAL": "FACIAL",
+    "TRABAJADOR": "WORKER",
+    "RECEPCION": "STAFF",
+    "RECEPCIÓN": "STAFF",
+
+    # Variantes comunes
+    "SUPERUSER": "ADMIN",
+}
+
+
+def _norm_role(value: str) -> str:
+    r = (value or "").strip().upper()
+    return _ROLE_ALIASES.get(r, r)
+
+
+def _user_has_any_role(user, role_names: Iterable[str]) -> bool:
     """
-    from/to en formato YYYY-MM-DD.
-    Rango inclusivo en fechas -> convertimos a [from 00:00, to+1 00:00)
+    Compatible con:
+    - user.role (string)
+    - Django Groups
+    - user.is_staff / user.is_superuser
+    Comparación case-insensitive + alias.
     """
-    from_str = request.query_params.get("from")
-    to_str = request.query_params.get("to")
-    if not from_str or not to_str:
-        raise ValueError("Parámetros requeridos: from y to (YYYY-MM-DD).")
+    wanted = {_norm_role(r) for r in role_names}
 
-    from_date = datetime.fromisoformat(from_str).date()
-    to_date = datetime.fromisoformat(to_str).date()
+    if getattr(user, "is_superuser", False):
+        return True
 
-    start_dt = timezone.make_aware(datetime.combine(from_date, time.min))
-    end_dt = timezone.make_aware(datetime.combine(to_date + timedelta(days=1), time.min))
-    return start_dt, end_dt
+    # Si está pidiendo STAFF o ADMIN, contemplamos is_staff
+    if getattr(user, "is_staff", False) and ("STAFF" in wanted or "ADMIN" in wanted):
+        return True
+
+    # Campo role (si existe)
+    if hasattr(user, "role"):
+        user_role = _norm_role(getattr(user, "role", "") or "")
+        if user_role and user_role in wanted:
+            return True
+
+    # Groups (si se usa)
+    try:
+        user_groups = {_norm_role(g.name) for g in user.groups.all()}
+        if user_groups.intersection(wanted):
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
-class StaffAgendaAPIView(ListAPIView):
-    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
-    serializer_class = AppointmentStaffSerializer
+# -----------------------------
+# Fechas
+# -----------------------------
+def _parse_date(date_str: Optional[str]):
+    if not date_str:
+        return timezone.localdate()
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return timezone.localdate()
 
-    def get_queryset(self):
-        start_dt, end_dt = _parse_range(self.request)
 
-        blocks_qs = (
+def _day_range_aware(day):
+    tz = timezone.get_current_timezone()
+    start = datetime.combine(day, datetime.min.time())
+    start = timezone.make_aware(start, tz)
+    end = start + timedelta(days=1)
+    return start, end
+
+
+# -----------------------------
+# Staff agenda
+# -----------------------------
+class StaffAgendaAPIView(APIView):
+    """
+    Agenda general para recepción/staff.
+
+    GET params:
+      - date=YYYY-MM-DD (opcional)
+      - worker_id=ID (opcional)
+      - status=RESERVED|CANCELLED|ATTENDED|NO_SHOW (opcional)
+      - q=texto (opcional): busca por nombre/teléfono
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if not _user_has_any_role(user, ["staff", "admin"]):
+            return Response({"detail": "No autorizado."}, status=403)
+
+        day = _parse_date(request.query_params.get("date"))
+        start_dt, end_dt = _day_range_aware(day)
+
+        qs = Appointment.objects.all().order_by("start_datetime")
+
+        # Rango del día
+        qs = qs.filter(start_datetime__gte=start_dt, start_datetime__lt=end_dt)
+
+        # Filtros
+        worker_id = request.query_params.get("worker_id")
+        if worker_id:
+            # En tu modelo AppointmentBlock tiene related_name="blocks"
+            qs = qs.filter(blocks__worker_id=worker_id).distinct()
+
+        status_param = request.query_params.get("status")
+        if status_param:
+            qs = qs.filter(status=status_param)
+
+        q = request.query_params.get("q")
+        if q:
+            q = q.strip()
+            combined = Q()
+
+            # customer relacionado (existe en tus modelos)
+            combined |= Q(customer__name__icontains=q)
+            combined |= Q(customer__phone__icontains=q)
+
+            qs = qs.filter(combined)
+
+        # Optimizaciones
+        qs = qs.select_related("customer", "paid_by")
+
+        data = AppointmentStaffSerializer(qs, many=True).data
+        return Response({"date": str(day), "count": len(data), "results": data}, status=200)
+
+
+# -----------------------------
+# My agenda (worker)
+# -----------------------------
+
+class MyAgendaAPIView(APIView):
+    """
+    Agenda del trabajador autenticado (solo sus turnos).
+
+    GET params:
+      - date=YYYY-MM-DD (opcional)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # 1) Autorizar por relación Worker (la fuente de verdad para "mi agenda")
+        worker = None
+        try:
+            from staffing.models import Worker
+            # si tu FK se llama diferente a "user", aquí es donde tocaría ajustar
+            worker = Worker.objects.filter(user=user).first()
+        except Exception:
+            worker = None
+
+        # DEBUG opcional (solo en desarrollo): te dice por qué está fallando
+        if not worker:
+            if getattr(settings, "DEBUG", False) and request.query_params.get("debug") == "1":
+                role_val = getattr(user, "role", None)
+                try:
+                    groups = list(user.groups.values_list("name", flat=True))
+                except Exception:
+                    groups = []
+                return Response(
+                    {
+                        "detail": "No autorizado (DEBUG). No existe Worker asociado a este usuario.",
+                        "user_id": getattr(user, "id", None),
+                        "username": getattr(user, "username", None),
+                        "role_attr": role_val,
+                        "groups": groups,
+                        "is_staff": getattr(user, "is_staff", False),
+                        "is_superuser": getattr(user, "is_superuser", False),
+                    },
+                    status=403,
+                )
+
+            # Si es staff/admin pero no tiene Worker, devolvemos 400 (no aplica a "my")
+            # (si quieres permitir staff aquí, podrías redirigirlos a /agenda/staff/)
+            return Response({"detail": "No autorizado."}, status=403)
+
+        # 2) Ya autorizado: traer agenda del día para ese worker
+        day = _parse_date(request.query_params.get("date"))
+        start_dt, end_dt = _day_range_aware(day)
+
+        blocks = (
             AppointmentBlock.objects
-            .select_related("worker")
-            .prefetch_related("service_lines")
+            .filter(worker_id=worker.id, start_datetime__gte=start_dt, start_datetime__lt=end_dt)
         )
 
-        return (
+        appointment_ids = blocks.values_list("appointment_id", flat=True).distinct()
+
+        qs = (
             Appointment.objects
-            .filter(start_datetime__gte=start_dt, start_datetime__lt=end_dt)
-            .select_related("customer", "created_by", "cancelled_by", "paid_by")
-            .prefetch_related(Prefetch("blocks", queryset=blocks_qs))
-            .order_by("start_datetime")
-        )
-
-
-class MyAgendaAPIView(ListAPIView):
-    permission_classes = [IsAuthenticated, IsWorker]
-    serializer_class = AppointmentWorkerSerializer
-
-    def get_queryset(self):
-        start_dt, end_dt = _parse_range(self.request)
-
-        # worker asociado al usuario
-        worker = getattr(self.request.user, "worker_profile", None)
-        if worker is None:
-            # fallback por si tu relación tiene otro nombre
-            worker = getattr(self.request.user, "worker", None)
-
-        blocks_qs = (
-            AppointmentBlock.objects
-            .filter(worker=worker)
-            .select_related("worker")
-            .prefetch_related("service_lines")
-        )
-
-        return (
-            Appointment.objects
-            .filter(start_datetime__gte=start_dt, start_datetime__lt=end_dt, blocks__worker=worker)
+            .filter(id__in=appointment_ids)
             .select_related("customer")
-            .prefetch_related(Prefetch("blocks", queryset=blocks_qs))
-            .distinct()
             .order_by("start_datetime")
         )
 
-    def get_serializer_context(self):
-        ctx = super().get_serializer_context()
-        worker = getattr(self.request.user, "worker_profile", None)
-        if worker is None:
-            worker = getattr(self.request.user, "worker", None)
-        ctx["worker"] = worker
-        return ctx
+        data = AppointmentWorkerSerializer(qs, many=True).data
+        return Response(
+            {"date": str(day), "worker_id": worker.id, "count": len(data), "results": data},
+            status=200,
+        )

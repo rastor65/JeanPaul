@@ -1,0 +1,394 @@
+<section class="page">
+  <!-- TOP BAR -->
+  <header class="top" [@fadeUp]>
+    <div class="title">
+      <div class="mark" aria-hidden="true">JP</div>
+      <div class="title__text">
+        <h1>Agenda</h1>
+        <p>{{ dateLabel(date()) }}</p>
+      </div>
+    </div>
+
+    <div class="top__right">
+      <div class="meta">
+        <div class="meta__item">
+          <span class="meta__label">Hora</span>
+          <strong class="meta__value">{{ nowLabel() }}</strong>
+        </div>
+
+        <div class="meta__item" *ngIf="nextUp() as nx">
+          <span class="meta__label">Siguiente</span>
+          <strong class="meta__value">
+            {{ timeLabel(viewSpan(nx).start) }} • {{ nx.customer.name }}
+          </strong>
+          <span class="meta__sub">{{ relative(nx) }}</span>
+        </div>
+
+        <div class="meta__item" *ngIf="overdueCount() > 0">
+          <span class="meta__label">Atrasados</span>
+          <strong class="meta__value">{{ overdueCount() }}</strong>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="field">
+          <span class="field__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
+              <path
+                d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1Zm12 8H5v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9ZM6 6a1 1 0 0 0-1 1v1h14V7a1 1 0 0 0-1-1H6Z">
+              </path>
+            </svg>
+          </span>
+
+          <input
+            #dateInput
+            class="date"
+            type="date"
+            [value]="date()"
+            (change)="setDate(dateInput.value)"
+            aria-label="Seleccionar fecha"
+          />
+        </div>
+
+        <button class="btn btn--ghost" type="button" (click)="setToday()">Hoy</button>
+
+        <button class="btn btn--ghost" type="button" (click)="toggleAutoRefresh()">
+          {{ autoRefresh() ? 'Auto: ON' : 'Auto: OFF' }}
+        </button>
+
+        <button
+          class="btn btn--ghost"
+          type="button"
+          *ngIf="workerId()"
+          (click)="toggleOnlyMyBlocks()"
+          [title]="onlyMyBlocks() ? 'Mostrando solo tus bloques' : 'Mostrando turno completo'"
+        >
+          {{ onlyMyBlocks() ? 'Mis bloques' : 'Completo' }}
+        </button>
+
+        <button class="btn btn--primary" type="button" (click)="refresh()" [disabled]="loading()">
+          {{ loading() ? 'Cargando…' : 'Actualizar' }}
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- FILTERS -->
+  <section class="filters" [@fadeUp]>
+    <div class="chips">
+      <button class="chip" [class.active]="status()==='ALL'" (click)="setStatus('ALL')" type="button">
+        <span>Todos</span><strong>{{ counts().ALL }}</strong>
+      </button>
+
+      <button class="chip" [class.active]="status()==='RESERVED'" (click)="setStatus('RESERVED')" type="button">
+        <span>Reservados</span><strong>{{ counts().RESERVED }}</strong>
+      </button>
+
+      <button class="chip" [class.active]="status()==='ATTENDED'" (click)="setStatus('ATTENDED')" type="button">
+        <span>Atendidos</span><strong>{{ counts().ATTENDED }}</strong>
+      </button>
+
+      <button class="chip" [class.active]="status()==='CANCELLED'" (click)="setStatus('CANCELLED')" type="button">
+        <span>Cancelados</span><strong>{{ counts().CANCELLED }}</strong>
+      </button>
+
+      <button class="chip" [class.active]="status()==='NO_SHOW'" (click)="setStatus('NO_SHOW')" type="button">
+        <span>No show</span><strong>{{ counts().NO_SHOW }}</strong>
+      </button>
+    </div>
+
+    <div class="search">
+      <span class="search__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
+          <path
+            d="M10 2a8 8 0 1 1 5.293 14.004l4.351 4.351a1 1 0 0 1-1.414 1.414l-4.351-4.351A8 8 0 0 1 10 2Zm0 2a6 6 0 1 0 0 12a6 6 0 0 0 0-12Z">
+          </path>
+        </svg>
+      </span>
+
+      <input
+        class="search__input"
+        type="search"
+        placeholder="Buscar por cliente, teléfono o servicio…"
+        [value]="query()"
+        (input)="setQuery(($any($event.target)).value)"
+      />
+      <button class="search__clear" type="button" *ngIf="query()" (click)="setQuery('')">Limpiar</button>
+    </div>
+
+    <div class="subfilters">
+      <div class="seg">
+        <button class="seg__btn" type="button" [class.active]="timeFilter()==='ALL'" (click)="setTimeFilter('ALL')">
+          Todo
+        </button>
+        <button class="seg__btn" type="button" [class.active]="timeFilter()==='UPCOMING'" (click)="setTimeFilter('UPCOMING')">
+          Próximos
+        </button>
+        <button class="seg__btn" type="button" [class.active]="timeFilter()==='PAST'" (click)="setTimeFilter('PAST')">
+          Pasados
+        </button>
+      </div>
+
+      <button class="btn btn--ghost btn--small" type="button" (click)="toggleCompact()">
+        {{ compact() ? 'Vista cómoda' : 'Vista compacta' }}
+      </button>
+
+      <div class="nav">
+        <button class="btn btn--ghost btn--small" type="button" (click)="selectPrev()">Anterior</button>
+        <button class="btn btn--ghost btn--small" type="button" (click)="selectNext()">Siguiente</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ERROR -->
+  <div class="alert" *ngIf="error()" [@fadeUp]>
+    <strong>Atención:</strong> {{ error() }}
+  </div>
+
+  <!-- MAIN -->
+  <section class="grid">
+    <!-- LEFT: LIST -->
+    <div class="panel panel--list" [class.compact]="compact()">
+      <div class="panel__head">
+        <div>
+          <h2>Turnos</h2>
+          <p class="muted">{{ filtered().length }} de {{ results().length }} • {{ date() }}</p>
+        </div>
+
+        <div class="legend">
+          <span class="lg"><i class="dot dot--now"></i> En curso</span>
+          <span class="lg"><i class="dot dot--soon"></i> Próximo</span>
+          <span class="lg"><i class="dot dot--late"></i> Atrasado</span>
+        </div>
+      </div>
+
+      <!-- Skeleton -->
+      <div class="skeleton" *ngIf="loading()">
+        <div class="sk-row" *ngFor="let _ of [1,2,3,4,5,6]"></div>
+      </div>
+
+      <div class="empty" *ngIf="!loading() && filtered().length === 0" [@fadeUp]>
+        <div class="empty__icon" aria-hidden="true">JP</div>
+        <div class="empty__txt">
+          <strong>Sin turnos</strong>
+          <span>No hay registros para los filtros actuales.</span>
+        </div>
+      </div>
+
+      <div class="list" *ngIf="!loading() && filtered().length > 0" [@fadeUp]>
+        <div class="group" *ngFor="let g of groups()">
+          <div class="group__title">
+            <span class="hr">{{ g.hour }}</span>
+            <span class="line"></span>
+          </div>
+
+          <div
+            class="row"
+            *ngFor="let ap of g.items; trackBy: trackById"
+            (click)="select(ap)"
+            [class.selected]="selectedId() === ap.id"
+            [class.is-now]="isNow(ap)"
+            [class.is-soon]="!isNow(ap) && isSoon(ap)"
+            [class.is-late]="isLate(ap)"
+            tabindex="0"
+            role="button"
+            (keydown.enter)="select(ap)"
+            (keydown.space)="select(ap)"
+            [@fadeUp]
+          >
+            <div class="row__bar" aria-hidden="true"></div>
+
+            <!-- Hora (compacta) -->
+            <div class="row__time">
+              <strong class="t1">{{ timeLabel(viewSpan(ap).start) }}</strong>
+              <span class="t2">
+                {{ timeLabel(viewSpan(ap).end) }} • {{ viewSpan(ap).durationMin }} min
+              </span>
+            </div>
+
+            <!-- Cliente + estado -->
+            <div class="row__main">
+              <div class="row__top">
+                <div class="who">
+                  <span class="name">{{ ap.customer.name }}</span>
+                  <span class="sub" *ngIf="ap.customer.phone">{{ ap.customer.phone }}</span>
+                </div>
+
+                <span [class]="badgeClass(ap.status)">{{ badgeLabel(ap.status) }}</span>
+              </div>
+
+              <!-- Solo etiquetas esenciales -->
+              <div class="row__metaSimple">
+                <span class="tag tag--now" *ngIf="isNow(ap)">En curso</span>
+                <span class="tag tag--soon" *ngIf="!isNow(ap) && isSoon(ap)">Próximo</span>
+                <span class="tag tag--late" *ngIf="isLate(ap)">Atrasado</span>
+
+                <span class="pill pill--ghost">{{ relative(ap) }}</span>
+              </div>
+            </div>
+
+            <!-- Acciones rápidas (sin WhatsApp/Llamar/Copiar y sin ruido) -->
+            <div class="row__right" (click)="$event.stopPropagation()">
+              <ng-container *ngIf="ap.status === 'RESERVED'">
+                <div class="quickActions">
+                  <button class="q q--ok" type="button" [disabled]="busyId()===ap.id" (click)="markAttend(ap)">
+                    Atendido
+                  </button>
+                  <button class="q" type="button" [disabled]="busyId()===ap.id" (click)="markNoShow(ap)">
+                    No show
+                  </button>
+                </div>
+              </ng-container>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: DETAIL -->
+    <aside class="panel panel--detail" [@slideIn]>
+      <div class="panel__head">
+        <div>
+          <h2>Detalle</h2>
+          <p class="muted" *ngIf="selected() as ap">
+            Turno #{{ ap.id }} • {{ timeLabel(viewSpan(ap).start) }}–{{ timeLabel(viewSpan(ap).end) }}
+          </p>
+          <p class="muted" *ngIf="!selected()">Selecciona un turno para ver detalles.</p>
+        </div>
+      </div>
+
+      <ng-container *ngIf="selected() as ap; else noSelection">
+        <!-- HERO -->
+        <div class="hero" [class.hero--now]="isNow(ap)" [class.hero--soon]="!isNow(ap) && isSoon(ap)" [class.hero--late]="isLate(ap)" [@fadeUp]>
+          <div class="hero__top">
+            <div>
+              <div class="hero__name">{{ ap.customer.name }}</div>
+              <div class="hero__sub">
+                {{ timeLabel(viewSpan(ap).start) }}–{{ timeLabel(viewSpan(ap).end) }} • {{ viewSpan(ap).durationMin }} min
+              </div>
+              <div class="hero__chips">
+                <span [class]="badgeClass(ap.status)">{{ badgeLabel(ap.status) }}</span>
+                <span class="tag tag--now" *ngIf="isNow(ap)">EN CURSO</span>
+                <span class="tag tag--soon" *ngIf="!isNow(ap) && isSoon(ap)">PRÓXIMO</span>
+                <span class="tag tag--late" *ngIf="isLate(ap)">ATRASADO</span>
+              </div>
+            </div>
+
+            <div class="hero__right">
+              <div class="hero__rel">{{ relative(ap) }}</div>
+              <div class="hero__prog" aria-hidden="true">
+                <span class="hero__fill" [style.width.%]="progress(ap)"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero__actions">
+            <button class="btn2" type="button" (click)="copyDetail(ap)">Copiar detalle</button>
+            <button class="btn2" type="button" (click)="openWhatsApp(ap)" [disabled]="!ap.customer.phone">WhatsApp</button>
+            <button class="btn2" type="button" (click)="call(ap.customer.phone)" [disabled]="!ap.customer.phone">Llamar</button>
+
+            <ng-container *ngIf="ap.status === 'RESERVED'">
+              <span class="sep"></span>
+              <button class="btn2 btn2--ok" type="button" [disabled]="busyId()===ap.id" (click)="markAttend(ap)">Marcar atendido</button>
+              <button class="btn2" type="button" [disabled]="busyId()===ap.id" (click)="markNoShow(ap)">No show</button>
+              <button class="btn2 btn2--danger" type="button" [disabled]="busyId()===ap.id" (click)="askCancel(ap)">Cancelar</button>
+            </ng-container>
+          </div>
+        </div>
+
+        <!-- INFO -->
+        <div class="card" [@fadeUp]>
+          <div class="card__row">
+            <div class="k">
+              <span class="k__label">Teléfono</span>
+              <strong class="k__value">{{ ap.customer.phone || '—' }}</strong>
+            </div>
+
+            <div class="k">
+              <span class="k__label">Nacimiento</span>
+              <strong class="k__value">{{ birthLabel(ap.customer.birth_date) }}</strong>
+              <span class="k__sub" *ngIf="isBirthdayOnDate(ap.customer.birth_date)">Cumpleaños hoy</span>
+            </div>
+          </div>
+
+          <div class="card__row">
+            <div class="k">
+              <span class="k__label">Edad</span>
+              <strong class="k__value">{{ ageYears(ap.customer.birth_date) ?? '—' }}</strong>
+            </div>
+
+            <div class="k">
+              <span class="k__label">Bloques</span>
+              <strong class="k__value">{{ viewBlocks(ap).length }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLOCKS -->
+        <div class="card" [@fadeUp]>
+          <div class="card__title">Bloques asignados</div>
+
+          <div class="svc" *ngFor="let b of viewBlocks(ap)">
+            <div class="svc__head">
+              <span class="svc__wk">Bloque {{ b.sequence }}</span>
+              <span class="svc__wk muted">{{ timeLabel(b.start_datetime) }}–{{ timeLabel(b.end_datetime) }}</span>
+            </div>
+
+            <div class="svc__list">
+              <div class="svc__item" *ngFor="let s of b.services">
+                <span class="svc__dot" aria-hidden="true"></span>
+                <div class="svc__txt">
+                  <strong>{{ s.name }}</strong>
+                  <span class="muted">
+                    {{ s.duration_minutes }} min
+                    <span *ngIf="s.buffer_before || s.buffer_after">
+                      • buffer {{ s.buffer_before }} / {{ s.buffer_after }}
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="total">
+            <span class="muted">Total recomendado</span>
+            <strong>{{ ap.recommended_total || '0' }}</strong>
+          </div>
+        </div>
+      </ng-container>
+
+      <ng-template #noSelection>
+        <div class="empty empty--detail" [@fadeUp]>
+          <div class="empty__icon" aria-hidden="true">⌁</div>
+          <div class="empty__txt">
+            <strong>Sin selección</strong>
+            <span>Elige un turno del listado para ver el detalle completo.</span>
+          </div>
+        </div>
+      </ng-template>
+    </aside>
+  </section>
+
+  <!-- Confirm cancel modal -->
+  <div class="modal" *ngIf="confirmingCancel() as ap" [@fadeUp] (click)="closeCancel()">
+    <div class="modal__card" (click)="$event.stopPropagation()">
+      <div class="modal__title">Cancelar turno</div>
+      <p class="modal__text">
+        Se cancelará el turno de <strong>{{ ap.customer.name }}</strong>
+        ({{ timeLabel(viewSpan(ap).start) }}–{{ timeLabel(viewSpan(ap).end) }}).
+      </p>
+
+      <div class="modal__actions">
+        <button class="btn btn--ghost" type="button" (click)="closeCancel()">Volver</button>
+        <button class="btn btn--danger" type="button" [disabled]="busyId()===ap.id" (click)="confirmCancel()">
+          {{ busyId()===ap.id ? 'Procesando…' : 'Confirmar cancelación' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" *ngIf="toast() as t" [class]="t.kind" [@fadeUp]>
+    {{ t.text }}
+  </div>
+</section>

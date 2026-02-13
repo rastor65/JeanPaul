@@ -1,0 +1,17 @@
+:host {
+  display: block;
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: #f5f6f8;
+}
+
+.main {
+  padding: 16px;
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+}

@@ -1,0 +1,348 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.jp-aside {
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --text: rgba(0, 0, 0, 0.88);
+  --muted: rgba(0, 0, 0, 0.58);
+  --stroke: rgba(0, 0, 0, 0.08);
+  --gold: #d4af37;
+
+  height: 100%;
+  width: 270px;
+  background:
+    radial-gradient(520px 240px at 20% 10%, rgba(212, 175, 55, 0.10), transparent 60%),
+    linear-gradient(180deg, var(--bg), var(--panel));
+  border-right: 1px solid var(--stroke);
+  display: flex;
+  flex-direction: column;
+  transition: width .18s ease;
+  overflow: hidden;
+}
+
+.jp-aside.collapsed {
+  width: 86px;
+}
+
+.top {
+  padding: 14px 12px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.70);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.06);
+  min-width: 0;
+}
+
+.brand__mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  letter-spacing: .6px;
+  color: rgba(0, 0, 0, 0.90);
+  background: linear-gradient(135deg, var(--gold), rgba(242, 210, 122, 0.95));
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  box-shadow: 0 18px 44px rgba(212, 175, 55, 0.18);
+  flex: 0 0 auto;
+}
+
+.brand__mark--btn {
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+
+  /* reset botón */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+}
+
+.brand__mark--btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 48px rgba(212, 175, 55, 0.22);
+  filter: brightness(1.02);
+}
+
+.brand__mark--btn:active {
+  transform: translateY(0px);
+}
+
+.brand__mark--btn:focus-visible {
+  outline: none;
+  box-shadow: 0 18px 44px rgba(212, 175, 55, 0.18), 0 0 0 4px rgba(212, 175, 55, 0.18);
+}
+
+.brand__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.brand__name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.brand__tag {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.nav {
+  padding: 12px 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  text-decoration: none;
+  color: var(--text);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.06);
+  transition: transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+}
+
+.item:hover {
+  transform: translateY(-1px);
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
+}
+
+.rail {
+  position: absolute;
+  left: 6px;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.item.active {
+  border-color: rgba(212, 175, 55, 0.30);
+  background: rgba(212, 175, 55, 0.10);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.10), inset 0 0 0 1px rgba(212, 175, 55, 0.14);
+}
+
+.item.active .rail {
+  background: rgba(212, 175, 55, 0.92);
+}
+
+.icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.02));
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.svg {
+  width: 20px;
+  height: 20px;
+  fill: rgba(0, 0, 0, 0.78);
+  transition: fill .14s ease;
+}
+
+.item.active .svg {
+  fill: rgba(212, 175, 55, 0.95);
+}
+
+.label {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.chev {
+  margin-left: auto;
+  color: rgba(0, 0, 0, 0.30);
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+/* COLLAPSED */
+.jp-aside.collapsed .brand__text {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
+.jp-aside.collapsed .item {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding: 10px 10px;
+}
+
+.jp-aside.collapsed .label,
+.jp-aside.collapsed .chev {
+  opacity: 0;
+  transform: translateX(-6px);
+  width: 0;
+  overflow: hidden;
+}
+
+.jp-aside.collapsed .rail {
+  display: none;
+}
+
+/* BOTTOM */
+.bottom {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.70));
+  display: grid;
+  gap: 10px;
+}
+
+/* ✅ Toggle button */
+.toggle {
+  height: 44px;
+  border-radius: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+
+  color: rgba(0, 0, 0, 0.86);
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
+}
+
+.toggle:hover {
+  transform: translateY(-1px);
+  background: #fff;
+  border-color: rgba(212, 175, 55, 0.28);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
+}
+
+.toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.10), 0 0 0 4px rgba(212, 175, 55, 0.18);
+  border-color: rgba(212, 175, 55, 0.30);
+}
+
+.t-ico {
+  width: 32px;
+  height: 32px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: rgba(0, 0, 0, 0.92);
+  background: rgba(212, 175, 55, 0.14);
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.t-label {
+  font-weight: 800;
+  font-size: 13px;
+}
+
+/* en colapsado: solo icono */
+.jp-aside.collapsed .toggle {
+  justify-content: center;
+  padding: 0;
+}
+
+.jp-aside.collapsed .t-label {
+  display: none;
+}
+
+.mini {
+  padding: 10px 10px;
+  border-radius: 18px;
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.70);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mini__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.95);
+  box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.14);
+}
+
+.mini__text {
+  display: grid;
+  gap: 2px;
+}
+
+.mini__text strong {
+  font-size: 12px;
+}
+
+.mini__text span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.copy {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.50);
+}
+
+/* ✅ 1) Fija altura consistente para los items */
+.item{
+  height: 56px;          /* altura estable */
+  padding: 0 12px;       /* sin padding vertical */
+  align-items: center;   /* por si acaso */
+}
+
+/* (opcional) baja un poco el icono para que encaje más “premium” */
+.icon{
+  width: 40px;
+  height: 40px;
+}
+
+/* ✅ 2) En colapsado: botones cuadrados, centrados, sin crecer */
+.sidebar.collapsed .item{
+  width: 56px;          /* cuadrado */
+  height: 56px;
+  padding: 0;           /* elimina el padding que los hace altos */
+  justify-content: center;
+  margin: 0 auto;       /* centrado dentro del aside */
+  gap: 0;               /* evita espacio fantasma */
+}
+
+/* Ocultar label/chev como ya lo tienes, pero mejor asegurado */
+.sidebar.collapsed .label,
+.sidebar.collapsed .chev{
+  display: none;
+}

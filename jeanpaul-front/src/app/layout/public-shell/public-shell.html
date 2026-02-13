@@ -1,0 +1,42 @@
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" routerLink="/">
+      <span class="brand__mark" aria-hidden="true">JP</span>
+      <span class="brand__text">
+        <strong class="brand__name">Barbería Jean Paul</strong>
+        <span class="brand__tag">Estilo • Precisión • Experiencia</span>
+      </span>
+    </a>
+
+    <nav class="actions">
+      <button class="btn btn--gold" type="button" (click)="openReserve()">
+        Reservar turno
+      </button>
+
+      <a class="btn btn--ghost" routerLink="/login">
+        Ingresar
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main class="content">
+  <div class="content__inner">
+    <router-outlet></router-outlet>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="footer__inner">
+    <span>© {{ year }} Barbería Jean Paul</span>
+    <span class="footer__sep">•</span>
+    <span class="footer__muted">Riohacha, La Guajira</span>
+  </div>
+</footer>
+
+<app-reserve-modal
+  [open]="showReserve"
+  (closed)="closeReserve()">
+</app-reserve-modal>
+
+<app-toast></app-toast>

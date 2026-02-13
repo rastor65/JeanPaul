@@ -1,0 +1,195 @@
+<section class="wrap">
+  <header class="hero">
+    <div class="hero__left">
+      <div class="mono">
+        <div class="mono__mark" aria-hidden="true">JP</div>
+
+        <div class="mono__text">
+          <div class="mono__top">
+            <span class="muted">{{ todayLabel }}</span>
+            <span class="dot" aria-hidden="true"></span>
+            <span class="muted">{{ clockLabel }}</span>
+            <span class="dot" aria-hidden="true"></span>
+            <span class="muted" *ngIf="vm">Actualizado: {{ vm.updatedAt | date:'HH:mm' }}</span>
+          </div>
+
+          <h1 class="title">
+            {{ greeting }}, <span class="strong">{{ displayName }}</span>
+          </h1>
+
+          <p class="sub">Resumen del día: turnos, estado operativo y caja.</p>
+        </div>
+      </div>
+
+      <div class="hero__cta">
+        <button class="btn btn--primary" type="button" (click)="go('/app/agenda')">Ir a agenda</button>
+        <button class="btn btn--ghost" type="button" (click)="go('/app/turnos')">Ver turnos</button>
+        <button class="btn btn--ghost" type="button" (click)="go('/app/contabilidad')">Contabilidad</button>
+      </div>
+    </div>
+
+    <aside class="hero__right">
+      <div class="badge">
+        <div class="badge__icon" aria-hidden="true">★</div>
+        <div class="badge__text">
+          <strong>{{ roleLabel }}</strong>
+          <span>Acceso autorizado</span>
+        </div>
+      </div>
+
+      <div class="mini" *ngIf="vm as d">
+        <div class="mini__icon" aria-hidden="true">N</div>
+        <div class="mini__txt">
+          <span class="mini__label">Próximo turno</span>
+          <strong class="mini__value">{{ d.kpi.nextTime }}</strong>
+          <span class="mini__sub">{{ d.kpi.nextLabel }}</span>
+        </div>
+      </div>
+    </aside>
+  </header>
+
+  <div class="loading" *ngIf="loading && !vm">
+    <div class="sk sk--hero"></div>
+    <div class="sk sk--kpi"></div>
+  </div>
+
+  <div class="error" *ngIf="!loading && !vm && error">
+    <div class="error__txt">
+      <strong>Error</strong>
+      <span>{{ error }}</span>
+    </div>
+    <button class="btn btn--ghost" type="button" (click)="retry()">Reintentar</button>
+  </div>
+
+  <section class="kpis" *ngIf="!loading && vm as d">
+    <article class="kpi">
+      <div class="kpi__head">
+        <span class="kpi__icon" aria-hidden="true">T</span>
+        <span class="kpi__label">Turnos hoy</span>
+      </div>
+      <div class="kpi__value">{{ d.kpi.todayAppointments }}</div>
+      <div class="kpi__hint">Total programado</div>
+    </article>
+
+    <article class="kpi">
+      <div class="kpi__head">
+        <span class="kpi__icon" aria-hidden="true">R</span>
+        <span class="kpi__label">Pendientes</span>
+      </div>
+      <div class="kpi__value">{{ d.kpi.reserved }}</div>
+      <div class="kpi__hint">Por atender / pagar</div>
+    </article>
+
+    <article class="kpi">
+      <div class="kpi__head">
+        <span class="kpi__icon" aria-hidden="true">A</span>
+        <span class="kpi__label">Atendidos</span>
+      </div>
+      <div class="kpi__value">{{ d.kpi.attended }}</div>
+      <div class="kpi__hint">Finalizados hoy</div>
+    </article>
+  </section>
+
+  <section class="grid" *ngIf="vm as d">
+    <div class="panel">
+      <div class="panel__head">
+        <div>
+          <h2 class="panel__title">Agenda de hoy</h2>
+          <p class="panel__sub">Vista rápida de la jornada</p>
+        </div>
+
+        <a class="panel__link" routerLink="/app/agenda">
+          Abrir agenda <span class="arrow" aria-hidden="true">›</span>
+        </a>
+      </div>
+
+      <div class="agenda" *ngIf="d.agendaToday.length > 0; else emptyAgenda">
+        <button
+          class="row"
+          type="button"
+          *ngFor="let it of d.agendaToday; trackBy: trackById"
+          (click)="go('/app/agenda')"
+        >
+          <div class="row__time">{{ it.time }}</div>
+
+          <div class="row__main">
+            <div class="row__title">
+              <strong>{{ it.title }}</strong>
+            </div>
+
+            <div class="row__sub">
+              {{ it.customer }}
+              <span class="sep" aria-hidden="true">•</span>
+              <span *ngIf="it.worker; else noW">{{ it.worker }}</span>
+              <ng-template #noW><span class="muted">Sin asignar</span></ng-template>
+            </div>
+          </div>
+
+          <div class="status" [ngClass]="statusClass(it.status)">
+            {{ it.status }}
+          </div>
+
+          <div class="chev" aria-hidden="true">›</div>
+        </button>
+      </div>
+
+      <ng-template #emptyAgenda>
+        <div class="empty">
+          <div class="empty__icon" aria-hidden="true">JP</div>
+          <div class="empty__txt">
+            <strong>Sin registros</strong>
+            <span>Hoy no hay turnos programados.</span>
+          </div>
+        </div>
+      </ng-template>
+    </div>
+
+    <div class="panel panel--right">
+      <div class="panel__head">
+        <div>
+          <h2 class="panel__title">Acciones</h2>
+          <p class="panel__sub">Operación diaria en un clic</p>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="action" type="button" (click)="go('/app/agenda')">
+          <span class="action__icon" aria-hidden="true">G</span>
+          <div class="action__txt">
+            <strong>Agenda</strong>
+            <span>Organizar el día</span>
+          </div>
+        </button>
+
+        <button class="action" type="button" (click)="go('/app/turnos')">
+          <span class="action__icon" aria-hidden="true">U</span>
+          <div class="action__txt">
+            <strong>Turnos</strong>
+            <span>Estados y control</span>
+          </div>
+        </button>
+
+        <button class="action" type="button" (click)="go('/app/catalogo')">
+          <span class="action__icon" aria-hidden="true">S</span>
+          <div class="action__txt">
+            <strong>Servicios</strong>
+            <span>Duración y reglas</span>
+          </div>
+        </button>
+
+        <button class="action" type="button" (click)="go('/app/usuarios')">
+          <span class="action__icon" aria-hidden="true">P</span>
+          <div class="action__txt">
+            <strong>Personal</strong>
+            <span>Horarios</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="foot">
+        <span>© {{ year }} Barbería Jean Paul</span>
+        <span class="foot__muted">Panel interno</span>
+      </div>
+    </div>
+  </section>
+</section>
