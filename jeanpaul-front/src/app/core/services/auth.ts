@@ -86,7 +86,7 @@ export class AuthService {
       localStorage.removeItem(this.STORE_KEY);
       sessionStorage.removeItem(this.STORE_KEY);
       this.storage.setItem(this.STORE_KEY, JSON.stringify(payload));
-    } catch {}
+    } catch { }
   }
 
   private restoreSession() {
@@ -120,7 +120,7 @@ export class AuthService {
     try {
       localStorage.removeItem(this.STORE_KEY);
       sessionStorage.removeItem(this.STORE_KEY);
-    } catch {}
+    } catch { }
   }
 
   // Alias útil
@@ -152,7 +152,7 @@ export class AuthService {
     const rememberMe = opts?.rememberMe !== false; // por defecto true
 
     const resp = await firstValueFrom(
-      this.http.post<LoginResponse>(this.api(this.LOGIN_PATH), { username, password })
+      this.http.post<LoginResponse>(this.api(this.LOGIN_PATH), { username, password }, {withCredentials: true})
     );
 
     this.accessToken = resp?.access ? String(resp.access) : '';
@@ -171,7 +171,7 @@ export class AuthService {
 
     try {
       const me = await firstValueFrom(
-        this.http.get<AuthUser>(this.api(this.ME_PATH))
+        this.http.get<AuthUser>(this.api(this.ME_PATH), { withCredentials: true })
       );
 
       this.userSubject.next(me);
