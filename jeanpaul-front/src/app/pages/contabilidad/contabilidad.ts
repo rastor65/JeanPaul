@@ -345,7 +345,7 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   // API helpers
   // -----------------------
   private api(path: string): string {
-    const base = ((environment as any).API_URI ?? 'http://127.0.0.1:8000')
+    const base = ((environment as any).API_URI)
       .toString()
       .trim()
       .replace(/\/+$/, '');

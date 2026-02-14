@@ -8,7 +8,6 @@ function normalizeBase(url: string): string {
 }
 
 function isApiUrl(reqUrl: string, apiBase: string): boolean {
-  // Absoluta: http://127.0.0.1:8000/...
   if (reqUrl.startsWith(apiBase)) return true;
 
   // Relativa: /api/...
@@ -24,7 +23,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
 
   const apiBase = normalizeBase(
-    ((environment as any).API_URI ?? 'http://127.0.0.1:8000') as string
+    ((environment as any).API_URI) as string
   );
 
   if (!isApiUrl(req.url, apiBase)) return next(req);
