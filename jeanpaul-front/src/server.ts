@@ -11,38 +11,38 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// En producción (build), server queda en: dist/<app>/server
-// y browser queda en: dist/<app>/browser
+// En build queda: dist/<app>/server  y  dist/<app>/browser
 const browserDistFolder = join(__dirname, '../browser');
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
 
 /**
- * 1) Estáticos SOLO para rutas con extensión (js, css, png, etc.)
- *    Así evitamos que /chunk-XYZ.js termine respondiendo HTML.
+ * 1) Static files (js/css/images/etc.)
+ *    Si no existe el archivo, hace next() (fallthrough) y NO responde HTML aquí.
  */
-app.get(
-  '*.*',
+app.use(
   express.static(browserDistFolder, {
     maxAge: '1y',
     index: false,
     redirect: false,
-    // (opcional) si quieres:
-    // immutable: true,
+    fallthrough: true,
   }),
 );
 
 /**
- * 2) Para rutas HTML (sin extensión), evita cache del documento:
- *    esto reduce el riesgo de que el navegador conserve HTML viejo que
- *    apunta a chunks que ya no existen.
+ * 2) Si pidieron un archivo con extensión y no se encontró como estático,
+ *    NO lo mandes a SSR: responde 404 (evita MIME text/html en .js).
  */
 app.use((req, res, next) => {
-  if (!req.path.includes('.')) {
-    res.setHeader('Cache-Control', 'no-store');
+  if (req.path.includes('.')) {
+    res.status(404).type('text/plain').send('Not Found');
+    return;
   }
-  next();
+
+  // Para HTML SSR evita cache (reduce chunks viejos)
+  res.setHeader('Cache-Control', 'no-store');
+  return next();
 });
 
 /**
@@ -63,7 +63,7 @@ if (isMainModule(import.meta.url) || process.env['pm_id']) {
   app.listen(port, '0.0.0.0', (error?: unknown) => {
     if (error) throw error;
     console.log(`SSR listening on 0.0.0.0:${port}`);
-    console.log(`Serving static from: ${browserDistFolder}`);
+    console.log(`Static folder: ${browserDistFolder}`);
   });
 }
 
