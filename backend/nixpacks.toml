@@ -1,2 +1,12 @@
+# nixpacks.toml
+
 [phases.setup]
-aptPkgs = ["default-libmysqlclient-dev", "build-essential", "pkg-config"]
+# Extiende lo que ya pone Railway/Nixpacks y agrega zstd al LD_LIBRARY_PATH
+nixLibs = ["...", "zstd"]
+
+# Opcional (puedes dejarlo): asegura el paquete runtime también por apt
+aptPkgs = ["...", "libzstd1"]
+
+[start]
+# OJO: en tus settings el WSGI es backend.wsgi, no config.wsgi
+cmd = "gunicorn backend.wsgi:application --bind 0.0.0.0:$PORT"
