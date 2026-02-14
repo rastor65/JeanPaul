@@ -1,7 +1,2 @@
-# nixpacks.toml
 [phases.setup]
-aptPkgs = [
-  "build-essential",
-  "pkg-config",
-  "default-libmysqlclient-dev"
-]
+aptPkgs = ["default-libmysqlclient-dev", "build-essential", "pkg-config"]
