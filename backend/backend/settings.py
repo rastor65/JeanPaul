@@ -73,8 +73,8 @@ DATABASES = {
         "NAME": "railway",
         "USER": "root",
         "PASSWORD": "ePIVdKBbKiemIOSwgVgFufNIyyesLWPq",
-        "HOST": "mysql.railway.internal",
-        "PORT": "3306",
+        "HOST": "centerbeam.proxy.rlwy.net",
+        "PORT": "45199",
         "OPTIONS": {"charset": "utf8mb4"},
     }
 }
