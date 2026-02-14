@@ -102,7 +102,7 @@
       <form class="form" (ngSubmit)="onSubmit()" autocomplete="on">
         <!-- Identifier -->
         <div class="field">
-          <label for="identifier">Usuario / Teléfono / Email</label>
+          <label for="identifier">Usuario</label>
           <div class="control" [class.invalid]="errorMsg">
             <span class="icon" aria-hidden="true">
               <!-- user -->
@@ -118,11 +118,10 @@
               name="identifier"
               required
               autocomplete="username"
-              placeholder="admin | 3001234567 | correo@dominio.com"
+              placeholder="admin"
               (keydown)="onCapsCheck($event)"
             />
           </div>
-          <small class="hint">Puedes usar usuario, teléfono o correo.</small>
         </div>
 
         <!-- Password -->
