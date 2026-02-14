@@ -1,5 +1,9 @@
 [phases.setup]
-nixpkgsArchive = "373d6a14e460f2a1fc8859aeeda11d955487ed37" # nodejs_22 = 22.17.0 aprox
+nixpkgsArchive = "51ad838b03a05b1de6f9f2a0fffecee64a9788ee"
+nixPkgs = ["nodejs_22"]
 
-[variables]
-NODE_VERSION = "22"
+[phases.install]
+cmds = ["npm ci --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["npm run build"]
