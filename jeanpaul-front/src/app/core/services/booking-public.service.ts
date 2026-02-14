@@ -74,7 +74,7 @@ export interface PublicAppointmentResponse {
 
 @Injectable({ providedIn: 'root' })
 export class BookingPublicService {
-  private API = 'http://localhost:8000/api';
+  private API = 'https://jean-paul.up.railway.app/api';
 
   constructor(private http: HttpClient) {}
 

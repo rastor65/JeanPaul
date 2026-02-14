@@ -234,7 +234,7 @@ export class UsuariosComponent {
   // API helper
   // -----------------------------
   private api(path: string): string {
-    const base = ((environment as any).API_URI ?? 'http://localhost:8000')
+    const base = ((environment as any).API_URI)
       .toString()
       .trim()
       .replace(/\/+$/, '');

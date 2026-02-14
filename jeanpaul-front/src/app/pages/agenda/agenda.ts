@@ -245,7 +245,7 @@ export class AgendaComponent implements OnDestroy {
   // API helpers (NO hardcode 127)
   // -------------------------
   private api(path: string): string {
-    const base = ((environment as any).API_URI ?? 'http://localhost:8000')
+    const base = ((environment as any).API_URI)
       .toString()
       .trim()
       .replace(/\/+$/, '');
@@ -504,7 +504,7 @@ export class AgendaComponent implements OnDestroy {
 
     if (status === 401) {
       this.error.set(
-        'Sesión no válida en esta solicitud. Revisa que el frontend use el mismo host del login (localhost, no 127.0.0.1).'
+        'Sesión no válida en esta solicitud. Revisa que el frontend use el mismo host del login.'
       );
       return;
     }
