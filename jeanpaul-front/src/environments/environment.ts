@@ -1,4 +1,4 @@
 export const environment = {
-  production: false,
+  production: true,
   API_URI: 'https://jean-paul-backend.up.railway.app',
 };
