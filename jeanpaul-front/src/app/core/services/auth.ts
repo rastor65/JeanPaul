@@ -171,7 +171,9 @@ export class AuthService {
 
     try {
       const me = await firstValueFrom(
-        this.http.get<AuthUser>(this.api(this.ME_PATH), { withCredentials: true })
+        this.http.get<AuthUser>(this.api(this.ME_PATH), { 
+           headers: { Authorization: `Bearer ${this.accessToken}`}
+          })
       );
 
       this.userSubject.next(me);
