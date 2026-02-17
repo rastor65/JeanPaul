@@ -574,7 +574,7 @@ export class TurnosComponent implements OnDestroy {
     if (!ap) return;
 
     if (!this.isBillable(ap)){
-      this.toastMsg('Este turno no se cobra, no asistiío o cancelo su turno.');
+      this,this.toastMsg('Este turno no se cobra, no asistiío o cancelo su turno.');
       return;
     }
 
