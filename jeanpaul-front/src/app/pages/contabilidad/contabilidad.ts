@@ -679,6 +679,7 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   private computeKpis() {
     let gen = 0;
     let col = 0;
+    let pend = 0;
 
     let attended = 0;
 
@@ -688,25 +689,31 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
 
     let collectedCount = 0;
 
+    const isPayCountable = (a: AppointmentDTO) =>
+      (a._collected || 0) > 0 && a.status !== 'CANCELLED' && a.status !== 'NO_SHOW';
+
     for (const a of this.filteredAppointments) {
+      // Producción (solo servicios efectivamente atendidos)
       if (a.status === 'ATTENDED') {
         attended++;
         gen += a._generated || 0;
+        pend += a._pending || 0; // mejor que (gen - col) cuando col incluye pagos de no-atendidos
+      }
 
-        if ((a._collected || 0) > 0) {
-          col += a._collected;
-          collectedCount++;
+      // Recaudo (cualquier pago registrado)
+      if (isPayCountable(a)) {
+        col += a._collected || 0;
+        collectedCount++;
 
-          if (a.payment_method === 'CASH') cash += a._collected;
-          if (a.payment_method === 'TRANSFER') transfer += a._collected;
-          if (a.payment_method === 'CARD') card += a._collected;
-        }
+        if (a.payment_method === 'CASH') cash += a._collected || 0;
+        if (a.payment_method === 'TRANSFER') transfer += a._collected || 0;
+        if (a.payment_method === 'CARD') card += a._collected || 0;
       }
     }
 
     this.totalGenerated = this.round2(gen);
     this.totalCollected = this.round2(col);
-    this.totalPending = this.round2(gen - col);
+    this.totalPending = this.round2(pend);
 
     this.countAttended = attended;
 
@@ -1137,10 +1144,20 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   private toNumber(v: unknown): number {
     if (v == null) return 0;
     if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-    const s = String(v).replace(',', '.').replace(/[^\d.]/g, '').trim();
-    const n = parseFloat(s);
+
+    const s = String(v).trim();
+
+    // decimal tipo 239000.00 o 239000,00
+    if (/^-?\d+[.,]\d{1,2}$/.test(s.replace(/\s/g, ''))) {
+      return parseFloat(s.replace(/\s/g, '').replace(',', '.'));
+    }
+
+    // entero (quita separadores de miles y símbolos)
+    const digits = s.replace(/[^\d-]/g, '');
+    const n = parseInt(digits, 10);
     return Number.isFinite(n) ? n : 0;
   }
+
 
   private round2(n: number): number {
     return Math.round((n + Number.EPSILON) * 100) / 100;
