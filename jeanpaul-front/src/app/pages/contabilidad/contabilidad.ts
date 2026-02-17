@@ -22,7 +22,7 @@ type AppointmentDTO = {
 
   blocks?: Array<{
     id: number;
-    worker: number;
+    worker: number | any;
     worker_label?: string;
     start_datetime: string;
     end_datetime: string;
@@ -37,11 +37,11 @@ type AppointmentDTO = {
   paid_at?: string | null;
   paid_by?: string | null;
 
-  // Derivados
-  _generated: number;
+  // Derivados (TODO POR COBRADO)
+  _generated: number;   // ahora representa "producido" basado en lo cobrado
   _paid: number;
   _collected: number;
-  _pending: number;
+  _pending: number;     // cash-only -> 0
 
   _workers: string[];
   _workerIds: number[];
@@ -59,9 +59,9 @@ type PayrollRow = {
   worker_label: string;
   role: string;
   attended: number;
-  produced: number;
-  collected: number;
-  base: number;
+  produced: number;   // ahora es por cobrado
+  collected: number;  // por cobrado
+  base: number;       // siempre cobrado
   pct: number;
   workerPay: number;
   shopGain: number;
@@ -155,20 +155,17 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   private pickLabel(w: any): string {
     if (!w) return '';
 
-    // Casos comunes
     const direct =
       w.label ?? w.name ?? w.full_name ?? w.fullName ??
       w.username ?? w.display_name ?? w.displayName;
 
     if (direct && String(direct).trim()) return String(direct).trim();
 
-    // Nombres/apellidos (es/en)
     const fn = (w.first_name ?? w.firstName ?? w.nombres ?? w.nombre ?? '').toString().trim();
     const ln = (w.last_name ?? w.lastName ?? w.apellidos ?? w.apellido ?? '').toString().trim();
     const full = `${fn} ${ln}`.trim();
     if (full) return full;
 
-    // Anidado en user
     if (w.user) {
       const u = w.user;
       const uLabel =
@@ -201,7 +198,6 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
       .map((x) => this.asNum(x))
       .filter((x): x is number => x != null);
 
-    // únicos
     return Array.from(new Set(ids));
   }
 
@@ -243,20 +239,16 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   }
 
   private getWorkerLabelFromBlock(workerRaw: any, wid: number | null, workerLabelField?: any): string {
-    // 1) worker_label explícito del backend
     const wl = (workerLabelField ?? '').toString().trim();
     if (wl) return wl;
 
-    // 2) Si viene worker como objeto, intentamos sacar label/nombre
     if (workerRaw && typeof workerRaw === 'object') {
       const picked = this.pickLabel(workerRaw);
       if (picked) return picked;
     }
 
-    // 3) buscar por índice (multi-IDs)
     if (wid != null) return this.workerLabelById(wid);
 
-    // 4) fallback
     return String(workerRaw ?? '—');
   }
 
@@ -281,9 +273,9 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
 
   quick: 'DAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' = 'MONTH';
 
-  totalGenerated = 0;
+  totalGenerated = 0; // ahora = totalCollected (cash-only)
   totalCollected = 0;
-  totalPending = 0;
+  totalPending = 0;   // cash-only -> 0
   countAttended = 0;
   avgTicket = 0;
 
@@ -297,7 +289,7 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   // -----------------------
   // Liquidación
   // -----------------------
-  payrollBase: PayrollBase = 'COLLECTED';
+  payrollBase: PayrollBase = 'COLLECTED'; // forzado a COLLECTED
   rolePct: Record<string, number> = {};
   payrollCategories: PayrollCategory[] = [];
   payrollBaseTotal = 0;
@@ -313,11 +305,11 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   filtersForm = this.fb.group({
     from: ['', [Validators.required]],
     to: ['', [Validators.required]],
-    groupBy: ['DAY' as 'DAY' | 'WEEK' | 'MONTH'],       // ahora se muestra en la sección del gráfico
+    groupBy: ['DAY' as 'DAY' | 'WEEK' | 'MONTH'],
     workerId: [0],
     status: ['ALL' as 'ALL' | Status],
     paymentMethod: ['ALL' as 'ALL' | 'NONE' | 'CASH' | 'TRANSFER' | 'CARD'],
-    moneyMode: ['BOTH' as 'BOTH' | 'GENERATED' | 'COLLECTED'], // ahora se muestra en la sección del gráfico
+    moneyMode: ['BOTH' as 'BOTH' | 'GENERATED' | 'COLLECTED'], // se mantiene, pero todo se calcula con _collected
     q: [''],
   });
 
@@ -356,7 +348,6 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   // -----------------------
   // Workers
   // -----------------------
-
   private async loadWorkers() {
     this.beginLoading();
     try {
@@ -577,16 +568,23 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
       }
     }
 
-    const recommended = this.toNumber(a.recommended_total);
-    const generated = recommended > 0 ? recommended : servicesTotal;
-
+    // ---- BASE COBRADO (paid_total) ----
     const paidRaw = this.toNumber(a.paid_total);
 
     const hasPaymentEvidence =
-      !!a.paid_at || (a.payment_method != null && String(a.payment_method).trim() !== '') || paidRaw > 0;
+      !!a.paid_at ||
+      (a.payment_method != null && String(a.payment_method).trim() !== '') ||
+      paidRaw > 0;
 
     const collected = hasPaymentEvidence ? paidRaw : 0;
-    const pending = Math.max(0, generated - collected);
+
+    // IMPORTANTE:
+    // Toda la vista se calcula por lo COBRADO.
+    // "generated/producido" se iguala a lo cobrado para que "producido por trabajador" refleje el valor real cobrado.
+    const generated = collected;
+
+    // cash-only: no calculamos pendiente basado en recommended/servicios
+    const pending = 0;
 
     const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));
     const uniqNum = (xs: number[]) => Array.from(new Set(xs.filter((x) => Number.isFinite(x))));
@@ -677,7 +675,6 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   }
 
   private computeKpis() {
-    let gen = 0;
     let col = 0;
 
     let attended = 0;
@@ -689,24 +686,26 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
     let collectedCount = 0;
 
     for (const a of this.filteredAppointments) {
-      if (a.status === 'ATTENDED') {
-        attended++;
-        gen += a._generated || 0;
+      if (a.status === 'ATTENDED') attended++;
 
-        if ((a._collected || 0) > 0) {
-          col += a._collected;
-          collectedCount++;
+      // Para KPIs monetarios: todo por COBRADO, sin depender de recommended/services.
+      // Incluimos cualquier turno que NO sea cancelado/no_show y tenga valor cobrado.
+      if (a.status === 'CANCELLED' || a.status === 'NO_SHOW') continue;
 
-          if (a.payment_method === 'CASH') cash += a._collected;
-          if (a.payment_method === 'TRANSFER') transfer += a._collected;
-          if (a.payment_method === 'CARD') card += a._collected;
-        }
+      if ((a._collected || 0) > 0) {
+        col += a._collected;
+        collectedCount++;
+
+        if (a.payment_method === 'CASH') cash += a._collected;
+        if (a.payment_method === 'TRANSFER') transfer += a._collected;
+        if (a.payment_method === 'CARD') card += a._collected;
       }
     }
 
-    this.totalGenerated = this.round2(gen);
+    // cash-only: totalGenerated se alinea a totalCollected
     this.totalCollected = this.round2(col);
-    this.totalPending = this.round2(gen - col);
+    this.totalGenerated = this.round2(col);
+    this.totalPending = 0;
 
     this.countAttended = attended;
 
@@ -725,15 +724,20 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
     const map = new Map<string, { key: string; label: string; short: string; generated: number; collected: number }>();
 
     for (const a of this.filteredAppointments) {
-      if (a.status !== 'ATTENDED') continue;
+      // cash-only: series solo por cobrado (y excluimos cancelado/no_show)
+      if (a.status === 'CANCELLED' || a.status === 'NO_SHOW') continue;
+      if ((a._collected || 0) <= 0) continue;
 
       const keyObj = this.groupKey(a.start_datetime, groupBy);
       if (!map.has(keyObj.key)) map.set(keyObj.key, { ...keyObj, generated: 0, collected: 0 });
 
       const row = map.get(keyObj.key)!;
 
-      if (moneyMode === 'BOTH' || moneyMode === 'GENERATED') row.generated += a._generated || 0;
+      // Mantengo la UI (moneyMode), pero todo se alimenta desde _collected.
+      if (moneyMode === 'BOTH' || moneyMode === 'GENERATED') row.generated += a._collected || 0;
       if (moneyMode === 'BOTH' || moneyMode === 'COLLECTED') row.collected += a._collected || 0;
+
+      // Si el usuario elige GENERATED, sigue viendo el valor cobrado (en la barra "generated").
     }
 
     const arr = Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
@@ -795,18 +799,21 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
     this.computePayroll();
   }
 
-  setPayrollBase(b: PayrollBase) {
-    this.payrollBase = b;
+  // Forzado: esta vista SIEMPRE liquida por cobrado
+  setPayrollBase(_: PayrollBase) {
+    this.payrollBase = 'COLLECTED';
     this.computePayroll();
   }
 
   private computePayroll() {
-    const baseMode = this.payrollBase;
+    // Siempre por cobrado:
+    this.payrollBase = 'COLLECTED';
 
     const agg = new Map<number, { attended: number; produced: number; collected: number }>();
 
     for (const a of this.filteredAppointments || []) {
-      if (a.status !== 'ATTENDED') continue;
+      if (a.status === 'CANCELLED' || a.status === 'NO_SHOW') continue;
+      if ((a._collected || 0) <= 0) continue;
 
       const shares = this.computeWorkerShares(a);
       if (!shares.length) continue;
@@ -816,8 +823,11 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
         if (!agg.has(id)) agg.set(id, { attended: 0, produced: 0, collected: 0 });
 
         const row = agg.get(id)!;
+        // "attended" como conteo de turnos con cobro asociado
         row.attended += 1;
-        row.produced += (a._generated || 0) * ws.share;
+
+        // PRODUCIDO POR TRABAJADOR = LO COBRADO (proporcional al share)
+        row.produced += (a._collected || 0) * ws.share;
         row.collected += (a._collected || 0) * ws.share;
       }
     }
@@ -829,7 +839,9 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
 
       const produced = this.round2(v.produced);
       const collected = this.round2(v.collected);
-      const base = baseMode === 'COLLECTED' ? collected : produced;
+
+      // base siempre cobrado
+      const base = collected;
 
       const workerPay = this.round2(base * (pct / 100));
       const shopGain = this.round2(base - workerPay);
@@ -1132,13 +1144,45 @@ export class ContabilidadComponent implements OnInit, OnDestroy {
   }
 
   // -----------------------
-  // Numbers
+  // Numbers (ROBUSTO: 30.000 -> 30000)
   // -----------------------
   private toNumber(v: unknown): number {
     if (v == null) return 0;
     if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-    const s = String(v).replace(',', '.').replace(/[^\d.]/g, '').trim();
-    const n = parseFloat(s);
+
+    let s = String(v).trim();
+    if (!s) return 0;
+
+    // Quita moneda/espacios y deja dígitos, . , -
+    s = s.replace(/\s/g, '').replace(/[^\d.,-]/g, '');
+
+    const hasDot = s.includes('.');
+    const hasComma = s.includes(',');
+
+    if (hasDot && hasComma) {
+      const lastDot = s.lastIndexOf('.');
+      const lastComma = s.lastIndexOf(',');
+      if (lastComma > lastDot) {
+        // 1.234,56 -> miles '.', decimal ','
+        s = s.replace(/\./g, '').replace(',', '.');
+      } else {
+        // 1,234.56 -> miles ',', decimal '.'
+        s = s.replace(/,/g, '');
+      }
+    } else if (hasComma && !hasDot) {
+      // 30,000 (miles) o 123,45 (decimal)
+      const idx = s.lastIndexOf(',');
+      const decimals = s.length - idx - 1;
+      if (decimals === 2) s = s.replace(',', '.');
+      else s = s.replace(/,/g, '');
+    } else if (hasDot && !hasComma) {
+      // 30.000 (miles) o 123.45 (decimal)
+      const idx = s.lastIndexOf('.');
+      const decimals = s.length - idx - 1;
+      if (decimals !== 2) s = s.replace(/\./g, '');
+    }
+
+    const n = Number(s);
     return Number.isFinite(n) ? n : 0;
   }
 
