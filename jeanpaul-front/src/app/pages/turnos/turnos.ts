@@ -82,7 +82,7 @@ type Group = 'BARBER' | 'NAILS' | 'FACIAL';
   standalone: true,
   imports: [CommonModule],
   templateUrl: './turnos.html',
-  styleUrls: ['./turnos.scss'], // ✅ corregido (styleUrl -> styleUrls)
+  styleUrl: './turnos.scss',
 })
 export class TurnosComponent implements OnDestroy {
   private http = inject(HttpClient);
@@ -188,6 +188,7 @@ export class TurnosComponent implements OnDestroy {
 
   kpis = computed(() => {
     const items = this.results();
+
     const billable = items.filter(a => this.isBillable(a));
 
     const sumRecommended = billable.reduce(
@@ -572,8 +573,8 @@ export class TurnosComponent implements OnDestroy {
   openPayment(ap: Appointment) {
     if (!ap) return;
 
-    if (!this.isBillable(ap)) {
-      this.toastMsg('Este turno no se cobra: fue cancelado o no asistió.');
+    if (!this.isBillable(ap)){
+      this.toastMsg('Este turno no se cobra, no asistiío o cancelo su turno.');
       return;
     }
 
@@ -594,13 +595,13 @@ export class TurnosComponent implements OnDestroy {
   async quickCheckout(ap: Appointment) {
     if (!ap) return;
 
-    if (!this.isBillable(ap)) {
-      this.toastMsg('Este turno no se cobra: fue cancelado o no asistió.');
+    if (!this.isBillable(ap)){
+      this.toastMsg('este turno no se cobra no asistió o cancelo su turno');
       return;
     }
     if (this.isPaid(ap)) return;
 
-    // si está RESERVED, lo finalizamos primero y luego cobramos
+    // si está RESERVED, lo finalizamos primero y luego cobramos (para recepción es lo ideal)
     if (ap.status === 'RESERVED') {
       try {
         this.busyId.set(ap.id);
@@ -622,9 +623,10 @@ export class TurnosComponent implements OnDestroy {
   savePayment(ap: Appointment) {
     if (!ap) return;
 
-    // ✅ parse robusto COP (30.000 => 30000)
-    const amt = this.parseCOP(this.payAmount());
-    if (amt <= 0) {
+    const raw = this.payAmount().toString().trim().replace(',', '.');
+    const amt = Number(raw);
+
+    if (!raw || Number.isNaN(amt) || amt <= 0) {
       this.error.set('Ingresa un valor de pago válido.');
       return;
     }
@@ -730,8 +732,9 @@ export class TurnosComponent implements OnDestroy {
     if (!svc.length) return { ok: false, msg: 'Selecciona al menos un servicio.' };
 
     if (this.cRegisterPayment()) {
-      const amt = this.parseCOP(this.cPayAmount());
-      if (amt <= 0) return { ok: false, msg: 'Pago inválido.' };
+      const raw = this.cPayAmount().toString().trim().replace(',', '.');
+      const amt = Number(raw);
+      if (!raw || Number.isNaN(amt) || amt <= 0) return { ok: false, msg: 'Pago inválido.' };
     }
 
     return { ok: true };
@@ -786,7 +789,8 @@ export class TurnosComponent implements OnDestroy {
       }
 
       if (createdId && this.cRegisterPayment()) {
-        const amt = this.parseCOP(this.cPayAmount());
+        const raw = this.cPayAmount().toString().trim().replace(',', '.');
+        const amt = Number(raw);
         const url = this.api(`/api/appointments/${createdId}/payment/`);
         const payPayload: any = { paid_total: amt, payment_method: this.cPayMethod() };
         this.http.post<any>(url, payPayload, { withCredentials: true }).subscribe({
@@ -943,11 +947,9 @@ export class TurnosComponent implements OnDestroy {
     navigator.clipboard?.writeText(t).then(() => this.toastMsg('Copiado.'));
   }
 
-  // ✅ WhatsApp: si es número local CO (10 dígitos) se le agrega 57
   waLink(phone: string | null) {
-    let p = (phone ?? '').replace(/\D/g, '');
+    const p = (phone ?? '').replace(/\D/g, '');
     if (!p) return '';
-    if (p.length === 10) p = `57${p}`;
     return `https://wa.me/${p}`;
   }
 
@@ -1055,6 +1057,7 @@ export class TurnosComponent implements OnDestroy {
       .map(b => (b.worker_label ?? '').trim())
       .filter(Boolean);
     if (!labels.length) return '—';
+    // si hay varios, muestra el primero (recepción suele necesitar el principal)
     return labels[0];
   }
 
@@ -1108,6 +1111,7 @@ export class TurnosComponent implements OnDestroy {
     if (k === 'ENDING') return 'Por terminar';
     if (k === 'RUN') return 'En curso';
 
+    // si está próximo (inicio en 10 min)
     const now = this.nowMs();
     const s = this.ms(ap.start_datetime);
     const toStart = Math.round((s - now) / 60000);
@@ -1145,57 +1149,9 @@ export class TurnosComponent implements OnDestroy {
     return `${y}-${m}-${day}`;
   }
 
-  // ✅ Parser COP para inputs (30.000 / 30,000 / $30.000 => 30000)
-  private parseCOP(v: any): number {
-    if (v == null) return 0;
-    const digits = String(v).replace(/\D/g, '');
-    if (!digits) return 0;
-    const n = Number(digits);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  // ✅ Parser numérico robusto (soporta miles con . o ,)
   private toNum(v: any): number {
     if (v == null) return 0;
-    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-
-    let s = String(v).trim();
-    if (!s) return 0;
-
-    // quita moneda y espacios
-    s = s.replace(/\s/g, '').replace(/[^\d.,-]/g, '');
-
-    const hasDot = s.includes('.');
-    const hasComma = s.includes(',');
-
-    if (hasDot && hasComma) {
-      // el último separador define el decimal
-      const lastDot = s.lastIndexOf('.');
-      const lastComma = s.lastIndexOf(',');
-      if (lastComma > lastDot) {
-        // 1.234,56 -> miles '.', decimal ','
-        s = s.replace(/\./g, '').replace(',', '.');
-      } else {
-        // 1,234.56 -> miles ',', decimal '.'
-        s = s.replace(/,/g, '');
-      }
-    } else if (hasComma && !hasDot) {
-      // 30,000 (miles) o 123,45 (decimal)
-      const idx = s.lastIndexOf(',');
-      const decimals = s.length - idx - 1;
-      if (decimals === 2) s = s.replace(',', '.');
-      else s = s.replace(/,/g, '');
-    } else if (hasDot && !hasComma) {
-      // 30.000 (miles) o 123.45 (decimal)
-      const idx = s.lastIndexOf('.');
-      const decimals = s.length - idx - 1;
-      if (decimals === 2) {
-        // decimal válido
-      } else {
-        s = s.replace(/\./g, '');
-      }
-    }
-
+    const s = String(v).replace(',', '.').replace(/[^\d.]/g, '');
     const n = Number(s);
     return Number.isFinite(n) ? n : 0;
   }
