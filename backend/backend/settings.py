@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # =========================
 SECRET_KEY = "dev-secret-key-change-me-please-32-bytes-min-0123456789"
 DEBUG = False
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", ".up.railway.app", "jean-paul-backend.up.railway.app"]
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", ".up.railway.app", "jeanpaul-backend.up.railway.app"]
 
 # =========================
 # Apps
@@ -115,7 +115,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # CORS + CSRF (Angular dev)
 # =========================
 CORS_ALLOWED_ORIGINS = [
-    "https://jean-paul.up.railway.app",
+    "https://jeanpaul.up.railway.app",
     "http://localhost:4200",
     "http://127.0.0.1:4200",
 ]
@@ -136,7 +136,7 @@ CORS_ALLOW_HEADERS = [
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
-    "https://jean-paul.up.railway.app",
+    "https://jeanpaul.up.railway.app",
 ]
 
 # =========================
