@@ -4,7 +4,7 @@
     <div class="topbar-left">
       <div class="title">
         <h1>Gestión contable</h1>
-        <p>Ingresos, pagos del día y ganancia de la barbería (por categoría y trabajador).</p>
+        <p>Ingresos y liquidación por categoría/trabajador (todo por lo cobrado).</p>
       </div>
     </div>
 
@@ -78,40 +78,34 @@
 
   <!-- Summary -->
   <section class="summary">
-    <div class="kpi kpi-gen">
-      <div class="kpi-title">Generado</div>
-      <div class="kpi-value">{{ money(totalGenerated) }}</div>
-      <div class="kpi-sub">Atendidos (recomendado o suma de servicios)</div>
-    </div>
-
     <div class="kpi kpi-col">
-      <div class="kpi-title">Cobrado</div>
+      <div class="kpi-title">Producido</div>
       <div class="kpi-value">{{ money(totalCollected) }}</div>
-      <div class="kpi-sub">Pagos con evidencia (paid_at / método / valor)</div>
+      <div class="kpi-sub">Base única de toda la vista (paid_total).</div>
     </div>
 
     <div class="kpi kpi-neutral">
       <div class="kpi-title">Atendidos</div>
       <div class="kpi-value">{{ countAttended }}</div>
-      <div class="kpi-sub">En el rango filtrado</div>
+      <div class="kpi-sub">En el rango filtrado.</div>
     </div>
 
     <div class="kpi kpi-pay">
       <div class="kpi-title">Pago trabajadores</div>
       <div class="kpi-value">{{ money(payrollWorkerTotal) }}</div>
-      <div class="kpi-sub">Liquidación ({{ payrollBase === 'COLLECTED' ? 'Base: Cobrado' : 'Base: Producido' }})</div>
+      <div class="kpi-sub">Liquidación (base: cobrado).</div>
     </div>
-
+    
     <div class="kpi kpi-shop">
       <div class="kpi-title">Ganancia barbería</div>
       <div class="kpi-value">{{ money(payrollShopTotal) }}</div>
-      <div class="kpi-sub">Base total − Pago trabajadores</div>
+      <div class="kpi-sub">Cobrado − Pago trabajadores.</div>
     </div>
 
     <div class="kpi kpi-neutral">
       <div class="kpi-title">Ticket promedio</div>
       <div class="kpi-value">{{ money(avgTicket) }}</div>
-      <div class="kpi-sub">Cobrado / Atendidos cobrados</div>
+      <div class="kpi-sub">Cobrado / registros con cobro.</div>
     </div>
 
     <div class="kpi kpi-methods">
@@ -130,11 +124,10 @@
     <div class="card">
       <div class="card-head">
         <div class="card-head-left">
-          <h3>Comportamiento en el tiempo</h3>
-          <p>Comparación de generado vs cobrado según agrupación.</p>
+          <h3>Cobrado en el tiempo</h3>
+          <p>Comportamiento del ingreso real (paid_total) según agrupación.</p>
         </div>
 
-        <!-- OPCIONES DEL GRÁFICO AQUÍ -->
         <div class="chart-controls" [formGroup]="filtersForm">
           <div class="cc-field">
             <label>Agrupar</label>
@@ -145,17 +138,7 @@
             </select>
           </div>
 
-          <div class="cc-field">
-            <label>Ingreso</label>
-            <select class="select small" formControlName="moneyMode">
-              <option value="BOTH">Generado y Cobrado</option>
-              <option value="GENERATED">Solo generado</option>
-              <option value="COLLECTED">Solo cobrado</option>
-            </select>
-          </div>
-
           <div class="legend">
-            <span class="lg gen">Generado</span>
             <span class="lg col">Cobrado</span>
           </div>
         </div>
@@ -164,8 +147,7 @@
       <div class="chart-wrap" *ngIf="series.length > 0; else noSeries">
         <div class="chart">
           <div class="bar" *ngFor="let s of series">
-            <div class="bar-cols" [title]="s.label + ' | Gen: ' + money(s.generated) + ' | Cob: ' + money(s.collected)">
-              <div class="b gen" [style.height.%]="pct(s.generated, seriesMax)"></div>
+            <div class="bar-cols" [title]="s.label + ' | Cob: ' + money(s.collected)">
               <div class="b col" [style.height.%]="pct(s.collected, seriesMax)"></div>
             </div>
             <div class="bar-label">{{ s.short }}</div>
@@ -188,24 +170,15 @@
       <div class="card-head">
         <div>
           <h3>Liquidación por trabajador</h3>
-          <p>Ajusta el % por categoría. Calcula pago del trabajador y ganancia barbería.</p>
-        </div>
-
-        <div class="segmented small" role="tablist" aria-label="Base de liquidación">
-          <button type="button" class="seg" [class.active]="payrollBase==='COLLECTED'" (click)="setPayrollBase('COLLECTED')">
-            Base: Cobrado
-          </button>
-          <button type="button" class="seg" [class.active]="payrollBase==='GENERATED'" (click)="setPayrollBase('GENERATED')">
-            Base: Producido
-          </button>
+          <p>Ajusta el % por categoría. Pago trabajador y ganancia barbería (siempre por cobrado).</p>
         </div>
       </div>
 
       <div class="payroll-wrap" *ngIf="payrollCategories.length > 0; else noPayroll">
         <div class="payroll-total">
           <div class="tot">
-            <div class="k">Base total</div>
-            <div class="v">{{ money(payrollBaseTotal) }}</div>
+            <div class="k">Cobrado total</div>
+            <div class="v">{{ money(payrollCollectedTotal) }}</div>
           </div>
           <div class="tot">
             <div class="k">Pago trabajadores</div>
@@ -239,7 +212,7 @@
             </div>
 
             <div class="cat-right">
-              <div class="mini-line"><span class="k">Base</span><span class="v">{{ money(c.baseTotal) }}</span></div>
+              <div class="mini-line"><span class="k">Cobrado</span><span class="v">{{ money(c.collectedTotal) }}</span></div>
               <div class="mini-line"><span class="k">Trab.</span><span class="v">{{ money(c.workerPayTotal) }}</span></div>
               <div class="mini-line"><span class="k">Barb.</span><span class="v">{{ money(c.shopGainTotal) }}</span></div>
             </div>
@@ -251,7 +224,7 @@
                 <tr>
                   <th>Trabajador</th>
                   <th class="num">Atendidos</th>
-                  <th class="num">Producido</th>
+                  <th class="num">Cobrado</th>
                   <th class="num">Pago</th>
                   <th class="num">Barbería</th>
                 </tr>
@@ -260,10 +233,10 @@
                 <tr *ngFor="let r of c.workers">
                   <td>
                     <div class="wname">{{ r.worker_label }}</div>
-                    <div class="wsub muted">Participación: {{ r.pct }}%</div>
+                    <div class="wsub muted">% categoría: {{ r.pct }}%</div>
                   </td>
                   <td class="num">{{ r.attended }}</td>
-                  <td class="num">{{ money(r.produced) }}</td>
+                  <td class="num">{{ money(r.collected) }}</td>
                   <td class="num"><span class="strong">{{ money(r.workerPay) }}</span></td>
                   <td class="num">{{ money(r.shopGain) }}</td>
                 </tr>
@@ -284,7 +257,7 @@
     <div class="card-head">
       <div>
         <h3>Detalle de turnos</h3>
-        <p>Listado filtrado para auditoría rápida.</p>
+        <p>Listado filtrado para auditoría rápida (solo valores cobrados).</p>
       </div>
 
       <div class="mini-actions">
@@ -303,8 +276,6 @@
             <th>Trabajadores</th>
             <th (click)="setSort('status')" class="sortable">Estado</th>
             <th class="num" (click)="setSort('collected')" class="sortable">Cobrado</th>
-            <th class="num" (click)="setSort('generated')" class="sortable">Generado</th>
-            <th class="num" (click)="setSort('pending')" class="sortable">Pendiente</th>
             <th>Método</th>
             <th>Pagado</th>
           </tr>
@@ -340,9 +311,6 @@
               <div class="strong">{{ money(a._collected) }}</div>
               <div class="muted" *ngIf="showDetails && a._collected === 0">Sin cobro</div>
             </td>
-
-            <td class="num"><div class="strong">{{ money(a._generated) }}</div></td>
-            <td class="num"><div class="strong">{{ money(a._pending) }}</div></td>
 
             <td><span class="muted">{{ labelMethod(a.payment_method) }}</span></td>
 
