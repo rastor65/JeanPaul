@@ -94,9 +94,6 @@ class AppointmentRescheduleAPIView(APIView):
         if not user or not user.is_authenticated:
             return Response({"detail": "No autenticado."}, status=401)
 
-        if not _is_staff_or_admin(user):
-            raise PermissionDenied("No tienes permisos para reprogramar citas.")
-
         option_id = (request.data.get("option_id") or "").strip()
         reason = (request.data.get("reason") or "").strip()
 
