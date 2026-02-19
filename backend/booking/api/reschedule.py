@@ -239,3 +239,81 @@ class AppointmentRescheduleAPIView(APIView):
                 },
                 status=200
             )
+
+
+# views.py
+from datetime import timedelta
+from django.db import transaction
+from django.db.models import Sum
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.exceptions import ValidationError
+
+from ..models import Appointment, Service, Worker
+from ..serializers import AppointmentSerializer, AppointmentInlineEditSerializer
+from ..permissions import IsStaffUser
+
+class StaffAppointmentViewSet(...):  # o tu ViewSet actual de staff
+    queryset = Appointment.objects.all()
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsStaffUser]
+
+    @action(detail=True, methods=["post"], url_path="inline-edit")
+    def inline_edit(self, request, pk=None):
+        appt = self.get_object()
+        ser = AppointmentInlineEditSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        update_fields = []
+
+        with transaction.atomic():
+            # 1) Servicios/duración
+            if "service_ids" in data:
+                ids = list(dict.fromkeys(data["service_ids"]))  # unique manteniendo orden
+                services = list(Service.objects.filter(id__in=ids, is_active=True))
+
+                if len(services) != len(ids):
+                    raise ValidationError({"service_ids": "Uno o más servicios no existen o están inactivos."})
+
+                appt.services.set(services)
+
+                total_minutes = (
+                    Service.objects.filter(id__in=ids)
+                    .aggregate(total=Sum("duration_minutes"))["total"]
+                ) or 0
+
+                # Ajusta según tu modelo:
+                # Si tienes end_at y start_at:
+                if getattr(appt, "start_at", None) and hasattr(appt, "end_at"):
+                    appt.end_at = appt.start_at + timedelta(minutes=total_minutes)
+                    update_fields.append("end_at")
+
+                # Si tienes un campo duration_minutes:
+                if hasattr(appt, "duration_minutes"):
+                    appt.duration_minutes = total_minutes
+                    update_fields.append("duration_minutes")
+
+                # Si quieres dejar evidencia de override (recomendado):
+                if hasattr(appt, "edited_without_availability"):
+                    appt.edited_without_availability = True
+                    update_fields.append("edited_without_availability")
+
+            # 2) Nota
+            if "note" in data:
+                appt.note = data["note"] or ""
+                update_fields.append("note")
+
+            # 3) Worker (opcional)
+            if "worker_id" in data:
+                if data["worker_id"] is None:
+                    appt.worker = None
+                else:
+                    appt.worker = Worker.objects.get(id=data["worker_id"])
+                update_fields.append("worker")
+
+            if update_fields:
+                appt.save(update_fields=list(set(update_fields)))
+
+        return Response(AppointmentSerializer(appt).data, status=status.HTTP_200_OK)

@@ -6,7 +6,7 @@ from booking.api.agenda import StaffAgendaAPIView, MyAgendaAPIView
 from booking.api.public_appointments import PublicAppointmentCreateAPIView
 from booking.api_customers_staff import CustomerStaffListCreateAPIView, CustomerStaffDetailAPIView
 from booking.views import AppointmentStaffList
-from booking.api.reschedule import AppointmentRescheduleAPIView
+from booking.api.reschedule import AppointmentRescheduleAPIView, StaffAppointmentViewSet
 
 from booking.api.management import (
     CancelAppointmentAPIView,
@@ -14,6 +14,9 @@ from booking.api.management import (
     MarkNoShowAPIView,
     RegisterPaymentAPIView,
 )
+
+staff_inline_edit = StaffAppointmentViewSet.as_view({"post": "inline_edit"})
+staff_detail = StaffAppointmentViewSet.as_view({"get": "retrieve"})
 
 urlpatterns = [
     # disponibilidad (opciones de turno)
@@ -37,6 +40,9 @@ urlpatterns = [
     path("staff/customers/<int:pk>/", CustomerStaffDetailAPIView.as_view(), name="staff-customers-detail"),
 
     path("appointments/staff/", AppointmentStaffList.as_view(), name="appointments-staff"),
-    path("appointments/<int:appointment_id>/reschedule/", AppointmentRescheduleAPIView.as_view(), name="appointment-reschedule"),
+    path("staff/appointments/<int:appointment_id>/reschedule/", AppointmentRescheduleAPIView.as_view(), name="appointment-reschedule"),
+    path("staff/appointments/<int:pk>/inline-edit/", staff_inline_edit, name="appointment-inline-edit"),
+    
+    path("appointments/<int:pk>/", staff_detail, name="appointments-detail"),
     
 ]

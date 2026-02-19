@@ -95,6 +95,8 @@ export class TurnosComponent implements OnDestroy {
   date = signal<string>(this.toISODate(new Date()));
   status = signal<StatusFilter>('ALL');
   query = signal<string>('');
+  API_URI = environment.API_URI;
+  editing = signal(false);
 
   // Filtro por trabajador (solo UI)
   workerId = signal<string>(''); // '' = todos
@@ -857,11 +859,24 @@ export class TurnosComponent implements OnDestroy {
   }
 
   toggleService(id: number) {
+    this.error.set('');
     const set = new Set(this.cSelectedServiceIds());
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
+    set.has(id) ? set.delete(id) : set.add(id);
     this.cSelectedServiceIds.set(Array.from(set));
   }
+
+  toggleEditService(id: number) {
+    this.error.set('');
+    const set = new Set(this.eSelectedServiceIds());
+    set.has(id) ? set.delete(id) : set.add(id);
+    this.eSelectedServiceIds.set(Array.from(set));
+
+    // Si estás en MANUAL, refresca duración sugerida por servicios
+    if (this.eMode() === 'MANUAL') {
+      this.eDuration.set(this.eDurationByServices());
+    }
+  }
+
 
   canCreate(): { ok: boolean; msg?: string } {
     const type = this.cCustomerType();
@@ -972,7 +987,13 @@ export class TurnosComponent implements OnDestroy {
     this.selectedId.set(ap.id);
     this.error.set('');
 
-    this.eMode.set('RESCHEDULE');
+    // Si ya estás dentro del turno o faltan <= 30 min, RESCHEDULE normalmente falla por regla de negocio
+    const now = Date.now();
+    const startMs = this.ms(ap.start_datetime);
+    const limitMs = startMs - 30 * 60_000;
+
+    this.eMode.set(now >= limitMs ? 'MANUAL' : 'RESCHEDULE');
+
     this.eTime.set(this.hhmmFromDatetime(ap.start_datetime));
 
     const dur = this.durationMins(ap.start_datetime, ap.end_datetime);
@@ -981,7 +1002,6 @@ export class TurnosComponent implements OnDestroy {
     const svcIds = this.extractServiceIds(ap);
     this.eSelectedServiceIds.set(svcIds);
 
-    // ✅ Barbero correcto según los servicios/barber-block
     const barberId = this.findBarberWorkerIdFromBlocks(ap, svcIds);
     this.eBarberId.set(barberId || 'AUTO');
 
@@ -994,155 +1014,106 @@ export class TurnosComponent implements OnDestroy {
     this.editOpen.set(false);
   }
 
-  toggleEditService(id: number) {
-    const set = new Set(this.eSelectedServiceIds());
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
-    this.eSelectedServiceIds.set(Array.from(set));
-  }
-
   async saveEdit(ap: Appointment) {
-    if (!ap) return;
-
+    if (this.editing()) return;
+    this.editing.set(true);
     this.error.set('');
 
-    const date = this.date();
-    const time = (this.eTime() ?? '').trim();
-    const service_ids = this.eSelectedServiceIds().map(Number).filter(n => Number.isFinite(n));
-    const note = (this.eNote() ?? '').trim();
-
-    if (!time) {
-      this.error.set('Selecciona una hora (HH:MM).');
-      return;
-    }
-    if (!service_ids.length) {
-      this.error.set('Selecciona al menos un servicio.');
-      return;
-    }
-
-    this.busyId.set(ap.id);
-
     try {
-      if (this.eMode() === 'RESCHEDULE') {
-        // payload “nuevo backend” (deja que el backend resuelva internamente)
-        const workerRaw = (this.eBarberId() ?? '').trim();
-        const workerIdNum = workerRaw && workerRaw !== 'AUTO' ? Number(workerRaw) : null;
+      const mode = this.eMode();
+      const noteOrReason = (this.eNote() ?? '').trim() || null;
 
-        const basePayload: any = {
-          date,
-          time,
+      const service_ids = (this.eSelectedServiceIds() ?? [])
+        .map(Number)
+        .filter(Boolean);
+
+      if (!service_ids.length) throw new Error('Selecciona al menos un servicio.');
+
+      // ==========================
+      // ✅ MODO MANUAL (sin disponibilidad)
+      // ==========================
+      if (mode === 'MANUAL') {
+        const body: any = {
           service_ids,
-          note: note || null,
-          // aliases típicos
-          appointment_date: date,
-          appointment_time: time,
+          note: noteOrReason, // inline-edit usa "note" (según tu serializer)
+          // worker_id: null, // (no lo mando para no romper si tu cita es por blocks)
         };
-
-        if (this.hasBarberServicesSelected(service_ids)) {
-          basePayload.barber_choice = workerIdNum ? 'SPECIFIC' : 'NEAREST';
-          basePayload.barber_id = workerIdNum ? Number(workerIdNum) : null;
-
-          // aliases comunes
-          basePayload.worker_id = workerIdNum ? Number(workerIdNum) : null;
-          basePayload.worker = workerIdNum ? Number(workerIdNum) : null;
-        }
-
-        // 1) ✅ Intenta editar sin option_id (backend actualizado)
-        try {
-          await this.tryEndpoints([
-            { method: 'POST', url: this.api(`/api/appointments/${ap.id}/reschedule/`), body: basePayload },
-            { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/reschedule/`), body: basePayload },
-            { method: 'PATCH', url: this.api(`/api/appointments/${ap.id}/`), body: basePayload },
-            { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/`), body: basePayload },
-          ]);
-
-          this.toastMsg('Turno reprogramado.');
-          this.editOpen.set(false);
-          this.refresh();
-          return;
-        } catch (e1: any) {
-          // sigue al plan B (option_id)
-        }
-
-        // 2) ✅ Plan B: calcular option_id desde disponibilidad y enviar option_id
-        const option_id = await this.resolveOptionIdFromAvailability(date, time, service_ids, this.eBarberId());
 
         await this.tryEndpoints([
           {
-            method: 'PATCH',
-            url: this.api(`/api/appointments/${ap.id}/`),
-            body: { option_id, note: note || null },
-          },
-          {
-            method: 'PATCH',
-            url: this.api(`/api/staff/appointments/${ap.id}/`),
-            body: { option_id, note: note || null },
-          },
-          {
             method: 'POST',
-            url: this.api(`/api/appointments/${ap.id}/reschedule/`),
-            body: { option_id, note: note || null },
+            url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`),
+            body,
           },
-          {
-            method: 'POST',
-            url: this.api(`/api/staff/appointments/${ap.id}/reschedule/`),
-            body: { option_id, note: note || null },
-          },
-          {
-            method: 'POST',
-            url: this.api(`/api/appointments/${ap.id}/change-option/`),
-            body: { option_id, note: note || null },
-          },
+
+          // (Opcional) fallback por si aún tienes otra ruta legacy:
+          // { method: 'POST', url: this.api(`/api/appointments/${ap.id}/inline-edit/`), body },
         ]);
 
-        this.toastMsg('Turno reprogramado.');
         this.editOpen.set(false);
         this.refresh();
+        this.toastMsg('Turno actualizado (manual).');
         return;
       }
 
-      // MANUAL: ajustar duración/hora fin sin validar disponibilidad
-      const duration = Number(this.eDuration() ?? 0);
-      if (!Number.isFinite(duration) || duration <= 0) {
-        this.error.set('Ingresa una duración válida en minutos.');
-        return;
-      }
+      // ==========================
+      // ✅ MODO RESCHEDULE (con disponibilidad)
+      // ==========================
+      const date = this.date();
+      const time = (this.eTime() ?? '').trim();
+      if (!date || !time) throw new Error('Selecciona fecha y hora.');
 
-      const startDt = this.buildIsoWithOffset(date, time);
-      const endDt = this.buildIsoWithOffsetFromStart(date, time, duration);
+      const barberId = this.eHasBarberServices() ? (this.eBarberId() || 'AUTO') : 'AUTO';
+      const option_id = await this.resolveOptionIdFromAvailability(date, time, service_ids, barberId);
+
+      const body: any = {
+        option_id,
+        reason: noteOrReason, // tu reschedule.py usa "reason" (opcional)
+      };
 
       await this.tryEndpoints([
-        {
-          method: 'PATCH',
-          url: this.api(`/api/appointments/${ap.id}/`),
-          body: { start_datetime: startDt, end_datetime: endDt, service_ids, note: note || null },
-        },
-        {
-          method: 'POST',
-          url: this.api(`/api/appointments/${ap.id}/override/`),
-          body: { start_datetime: startDt, end_datetime: endDt, service_ids, note: note || null },
-        },
-        {
-          method: 'POST',
-          url: this.api(`/api/appointments/${ap.id}/manual/`),
-          body: { start_datetime: startDt, end_datetime: endDt, service_ids, note: note || null },
-        },
-        {
-          method: 'POST',
-          url: this.api(`/api/appointments/${ap.id}/reschedule/`),
-          body: { start_datetime: startDt, end_datetime: endDt, service_ids, note: note || null },
-        },
+        { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/reschedule/`), body },
+
+        // (Opcional) fallbacks legacy si tenías otras rutas antes:
+        // { method: 'POST', url: this.api(`/api/appointments/${ap.id}/reschedule/`), body },
+        // { method: 'POST', url: this.api(`/api/appointments/${ap.id}/change-option/`), body },
       ]);
 
-      this.toastMsg('Turno actualizado (ajuste manual).');
       this.editOpen.set(false);
       this.refresh();
+      this.toastMsg('Turno actualizado.');
     } catch (e: any) {
-      const msg = this.extractDetailFromAny(e) || 'No se pudo editar el turno.';
-      this.error.set(msg);
+      this.error.set(
+        this.extractDetailFromAny(e) ||
+        this.extractErr(e) ||
+        'No se pudo actualizar el turno.'
+      );
     } finally {
-      this.busyId.set(null);
+      this.editing.set(false);
     }
+  }
+
+  private extractErr(e: any): string {
+    const msg = e?.error?.detail ?? e?.error?.message ?? e?.message;
+    if (typeof msg === 'string') return msg;
+
+    if (e?.error && typeof e.error === 'object') {
+      try { return JSON.stringify(e.error); } catch { /* ignore */ }
+    }
+    return '';
+  }
+
+  async loadAll(): Promise<void> {
+    const anyThis: any = this;
+
+    // Llama al método real que tú ya tengas para recargar datos
+    if (typeof anyThis.loadTurnos === 'function') return anyThis.loadTurnos();
+    if (typeof anyThis.loadAppointments === 'function') return anyThis.loadAppointments();
+    if (typeof anyThis.load === 'function') return anyThis.load();
+    if (typeof anyThis.getAppointments === 'function') return anyThis.getAppointments();
+
+    // Si no existe ninguno, no rompe el build
+    return;
   }
 
   private async tryEndpoints(attempts: Array<{ method: 'POST' | 'PATCH' | 'PUT'; url: string; body: any }>) {

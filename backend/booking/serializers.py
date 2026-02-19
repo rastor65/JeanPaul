@@ -180,3 +180,12 @@ class AppointmentWorkerSerializer(AppointmentBaseSerializer):
     Para trabajador: normalmente NO necesita ver pago real.
     """
     pass
+
+class AppointmentInlineEditSerializer(serializers.Serializer):
+    service_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False
+    )
+    note = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # opcional si también quieres cambiar barber/worker en staff:
+    worker_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
