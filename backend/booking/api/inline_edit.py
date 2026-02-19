@@ -53,9 +53,6 @@ class AppointmentInlineEditAPIView(APIView):
         if not user or not user.is_authenticated:
             return Response({"detail": "No autenticado."}, status=401)
 
-        if not _is_staff_or_admin(user):
-            return Response({"detail": "No autorizado."}, status=403)
-
         duration = request.data.get("duration_minutes", None)
         note = (request.data.get("note") or "").strip()
         service_ids = request.data.get("service_ids", None)
