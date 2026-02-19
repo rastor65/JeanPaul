@@ -1,9 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnDestroy, signal } from '@angular/core';
+import { Component, computed, effect, inject, OnDestroy, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { BookingService, AvailabilityOption } from '../../core/services/booking';
+import { firstValueFrom, forkJoin, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 
 type StatusFilter = 'ALL' | 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
 type Status = 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
@@ -11,6 +12,7 @@ type PayMethod = 'CASH' | 'TRANSFER' | 'CARD';
 type CustomerType = 'CASUAL' | 'FREQUENT';
 
 type QueueTab = 'DUE' | 'ENDING' | 'RUN' | 'WORKER';
+type EditMode = 'RESCHEDULE' | 'MANUAL';
 
 type Customer = {
   id: number | null;
@@ -30,9 +32,13 @@ type Service = {
   active?: boolean;
 };
 
+type Group = 'BARBER' | 'NAILS' | 'FACIAL';
+
 type Worker = {
   id: number;
   label: string;
+  labelFull: string;
+  role?: Group;
 };
 
 type BlockService = {
@@ -75,8 +81,6 @@ type StaffAgendaResponse = {
   results: Appointment[];
 };
 
-type Group = 'BARBER' | 'NAILS' | 'FACIAL';
-
 @Component({
   selector: 'app-turnos',
   standalone: true,
@@ -91,7 +95,9 @@ export class TurnosComponent implements OnDestroy {
   date = signal<string>(this.toISODate(new Date()));
   status = signal<StatusFilter>('ALL');
   query = signal<string>('');
-  workerId = signal<string>('');
+
+  // Filtro por trabajador (solo UI)
+  workerId = signal<string>(''); // '' = todos
 
   loading = signal<boolean>(false);
   error = signal<string>('');
@@ -102,6 +108,7 @@ export class TurnosComponent implements OnDestroy {
 
   autoRefresh = signal<boolean>(false);
   private refreshTimer: any = null;
+  readonly Number = Number;
 
   // reloj UI (para “por terminar / por cobrar” sin depender solo del refresh)
   nowMs = signal<number>(Date.now());
@@ -111,11 +118,13 @@ export class TurnosComponent implements OnDestroy {
   workers = signal<Worker[]>([]);
   catalogLoading = signal<boolean>(false);
 
+  // Pago
   payOpen = signal<boolean>(false);
   payAmount = signal<string>('');
   payMethod = signal<PayMethod>('CASH');
   payNote = signal<string>('');
 
+  // Crear
   createOpen = signal<boolean>(false);
 
   cCustomerType = signal<CustomerType>('CASUAL');
@@ -136,8 +145,51 @@ export class TurnosComponent implements OnDestroy {
 
   toast = signal<string>('');
 
-  // ✅ Caja rápida
+  // Caja rápida
   queueTab = signal<QueueTab>('DUE');
+
+  // ============================
+  // ✅ EDICIÓN
+  // ============================
+  editOpen = signal<boolean>(false);
+  eMode = signal<EditMode>('RESCHEDULE'); // RESCHEDULE = cambiar barbero/hora/servicios con disponibilidad
+  eTime = signal<string>('');             // HH:MM
+  eDuration = signal<number>(0);          // minutos (solo MANUAL)
+  eBarberId = signal<string>('AUTO');     // AUTO o id (solo RESCHEDULE y si hay servicios barber)
+  eServiceQuery = signal<string>('');
+  eSelectedServiceIds = signal<number[]>([]);
+  eNote = signal<string>('');             // opcional, si el backend lo soporta
+
+  // ============================
+  // ✅ FILTRO BASE POR TRABAJADOR
+  // ============================
+  private matchesWorker(ap: Appointment, workerIdNum: number): boolean {
+    const blocks = ap?.blocks ?? [];
+    for (const b of blocks) {
+      if (Number(b.worker) === workerIdNum) return true;
+    }
+
+    // fallback por label (por si el backend no manda worker id en el bloque)
+    const w = this.workers().find(x => x.id === workerIdNum);
+    const label = (w?.label ?? '').trim().toLowerCase();
+    if (label) {
+      const labels = blocks.map(b => (b.worker_label ?? '').trim().toLowerCase());
+      if (labels.some(l => l && (l === label || l.includes(label)))) return true;
+    }
+
+    return false;
+  }
+
+  baseByWorker = computed(() => {
+    const items = this.results();
+    const widRaw = (this.workerId() ?? '').trim();
+    if (!widRaw) return items;
+
+    const wid = Number(widRaw);
+    if (!Number.isFinite(wid)) return items;
+
+    return items.filter(ap => this.matchesWorker(ap, wid));
+  });
 
   selected = computed(() => {
     const id = this.selectedId();
@@ -148,7 +200,8 @@ export class TurnosComponent implements OnDestroy {
   filtered = computed(() => {
     const st = this.status();
     const q = this.query().trim().toLowerCase();
-    let list = this.results();
+
+    let list = this.baseByWorker();
 
     if (st !== 'ALL') list = list.filter(a => a.status === st);
 
@@ -178,28 +231,27 @@ export class TurnosComponent implements OnDestroy {
     return Array.from(map.entries()).map(([hour, items]) => ({ hour, items }));
   });
 
+  // Conteos por estado respetando el filtro de trabajador (pero NO el buscador)
   counts = computed(() => {
-    const base = { ALL: 0, RESERVED: 0, ATTENDED: 0, CANCELLED: 0, NO_SHOW: 0 } as Record<StatusFilter, number>;
-    const items = this.results();
+    const base = { ALL: 0, RESERVED: 0, ATTENDED: 0, CANCELLED: 0, NO_SHOW: 0 } as Record<
+      StatusFilter,
+      number
+    >;
+
+    const items = this.baseByWorker();
     base.ALL = items.length;
     for (const a of items) base[a.status] = (base[a.status] ?? 0) + 1;
+
     return base;
   });
 
+  // KPIs respetando el filtro de trabajador (pero NO el buscador)
   kpis = computed(() => {
-    const items = this.results();
+    const items = this.baseByWorker();
 
     const billable = items.filter(a => this.isBillable(a));
-
-    const sumRecommended = billable.reduce(
-      (acc, a) => acc + this.toNum(a.recommended_total),
-      0
-    );
-
-    const sumPaid = billable.reduce(
-      (acc, a) => acc + this.toNum(a.paid_total ?? '0'),
-      0
-    );
+    const sumRecommended = billable.reduce((acc, a) => acc + this.toNum(a.recommended_total), 0);
+    const sumPaid = billable.reduce((acc, a) => acc + this.toNum(a.paid_total ?? '0'), 0);
 
     return {
       total: items.length,
@@ -212,6 +264,7 @@ export class TurnosComponent implements OnDestroy {
     };
   });
 
+  // Crear: servicios filtrados
   cServicesFiltered = computed(() => {
     const q = this.cServiceQuery().trim().toLowerCase();
     const list = this.services();
@@ -219,6 +272,7 @@ export class TurnosComponent implements OnDestroy {
     return list.filter(s => (s.name ?? '').toLowerCase().includes(q));
   });
 
+  // Crear: duración por servicios
   cDurationPreview = computed(() => {
     const ids = this.cSelectedServiceIds();
     const byId = new Map(this.services().map(s => [s.id, s]));
@@ -235,10 +289,10 @@ export class TurnosComponent implements OnDestroy {
   });
 
   // ============================
-  // ✅ Caja rápida: lógica
+  // ✅ Caja rápida (respeta filtro trabajador)
   // ============================
   attention = computed(() => {
-    const items = this.results();
+    const items = this.baseByWorker();
     const now = this.nowMs();
 
     let due = 0;
@@ -254,21 +308,19 @@ export class TurnosComponent implements OnDestroy {
 
       if (now >= s && now < e) running++;
       if (e <= now) due++;
-      if (e > now && (e - now) <= 15 * 60_000) ending++;
+      if (e > now && e - now <= 15 * 60_000) ending++;
     }
 
     return { due, ending, running };
   });
 
   quickQueue = computed(() => {
-    const items = this.results();
+    const items = this.baseByWorker();
     const tab = this.queueTab();
     const now = this.nowMs();
 
     const okBase = (ap: Appointment) =>
-      ap.status !== 'CANCELLED' &&
-      ap.status !== 'NO_SHOW' &&
-      !this.isPaid(ap);
+      ap.status !== 'CANCELLED' && ap.status !== 'NO_SHOW' && !this.isPaid(ap);
 
     const due = items
       .filter(ap => okBase(ap) && this.ms(ap.end_datetime) <= now)
@@ -276,7 +328,9 @@ export class TurnosComponent implements OnDestroy {
       .slice(0, 10);
 
     const ending = items
-      .filter(ap => okBase(ap) && this.ms(ap.end_datetime) > now && (this.ms(ap.end_datetime) - now) <= 15 * 60_000)
+      .filter(
+        ap => okBase(ap) && this.ms(ap.end_datetime) > now && this.ms(ap.end_datetime) - now <= 15 * 60_000
+      )
       .sort((a, b) => this.ms(a.end_datetime) - this.ms(b.end_datetime))
       .slice(0, 10);
 
@@ -291,10 +345,9 @@ export class TurnosComponent implements OnDestroy {
   });
 
   workerFocus = computed(() => {
-    const items = this.results();
+    const items = this.baseByWorker();
     const now = this.nowMs();
 
-    // agrupar por trabajador principal (bloque 1)
     const map = new Map<string, Appointment[]>();
     for (const ap of items) {
       const w = this.primaryWorkerLabel(ap);
@@ -306,26 +359,21 @@ export class TurnosComponent implements OnDestroy {
     }
 
     const pickForWorker = (arr: Appointment[]): Appointment | null => {
-      // prioridad:
-      // 1) terminado sin cobro (últimos primero)
       const due = arr
         .filter(a => this.ms(a.end_datetime) <= now)
         .sort((a, b) => this.ms(b.end_datetime) - this.ms(a.end_datetime));
       if (due[0]) return due[0];
 
-      // 2) por terminar (más cercano)
       const ending = arr
-        .filter(a => this.ms(a.end_datetime) > now && (this.ms(a.end_datetime) - now) <= 15 * 60_000)
+        .filter(a => this.ms(a.end_datetime) > now && this.ms(a.end_datetime) - now <= 15 * 60_000)
         .sort((a, b) => this.ms(a.end_datetime) - this.ms(b.end_datetime));
       if (ending[0]) return ending[0];
 
-      // 3) en curso
       const running = arr
         .filter(a => now >= this.ms(a.start_datetime) && now < this.ms(a.end_datetime))
         .sort((a, b) => this.ms(a.end_datetime) - this.ms(b.end_datetime));
       if (running[0]) return running[0];
 
-      // 4) siguiente
       const next = arr
         .filter(a => this.ms(a.start_datetime) > now)
         .sort((a, b) => this.ms(a.start_datetime) - this.ms(b.start_datetime));
@@ -338,27 +386,75 @@ export class TurnosComponent implements OnDestroy {
       if (picked) out.push({ worker, ap: picked });
     }
 
-    // ordenar por prioridad global
     out.sort((a, b) => {
       const ak = this.timeKey(a.ap);
       const bk = this.timeKey(b.ap);
       const pri = (k: string) => (k === 'DUE' ? 0 : k === 'ENDING' ? 1 : k === 'RUN' ? 2 : 3);
       const pd = pri(ak) - pri(bk);
       if (pd !== 0) return pd;
-
-      // luego por end
       return this.ms(a.ap.end_datetime) - this.ms(b.ap.end_datetime);
     });
 
     return out.slice(0, 12);
   });
 
+  // ============================
+  // ✅ EDICIÓN: computeds
+  // ============================
+  eServicesFiltered = computed(() => {
+    const q = this.eServiceQuery().trim().toLowerCase();
+    const list = this.services();
+    if (!q) return list;
+    return list.filter(s => (s.name ?? '').toLowerCase().includes(q));
+  });
+
+  eDurationByServices = computed(() => {
+    const ids = this.eSelectedServiceIds();
+    const byId = new Map(this.services().map(s => [s.id, s]));
+    let mins = 0;
+
+    for (const id of ids) {
+      const s = byId.get(id);
+      if (!s) continue;
+      mins += Number(s.duration_minutes ?? 0);
+      mins += Number(s.buffer_before_minutes ?? 0);
+      mins += Number(s.buffer_after_minutes ?? 0);
+    }
+    return mins;
+  });
+
+  eHasBarberServices = computed(() => {
+    const ids = this.eSelectedServiceIds();
+    return this.hasBarberServicesSelected(ids);
+  });
+
+  eEndTime = computed(() => {
+    const t = (this.eTime() ?? '').trim();
+    const mins = Number(this.eDuration() ?? 0);
+    if (!t || !Number.isFinite(mins) || mins <= 0) return '—';
+    const end = this.addMinutesToHHMM(t, mins);
+    return end || '—';
+  });
+
+  // ============================
+  // Workers
+  // ============================
+  barberWorkers = computed(() => this.workers().filter(w => w.role === 'BARBER'));
+
   constructor() {
     this.loadCatalog();
     this.refresh();
 
-    // actualiza reloj cada 20s para etiquetas “por cobrar / por terminar”
     this.clockTimer = setInterval(() => this.nowMs.set(Date.now()), 20_000);
+
+    // asegura que la selección siempre pertenezca al listado filtrado
+    effect(() => {
+      const list = this.filtered();
+      const current = this.selectedId();
+
+      if (current && list.some(x => x.id === current)) return;
+      this.selectedId.set(list[0]?.id ?? null);
+    });
   }
 
   ngOnDestroy(): void {
@@ -373,10 +469,7 @@ export class TurnosComponent implements OnDestroy {
   }
 
   private api(path: string): string {
-    const base = ((environment as any).API_URI)
-      .toString()
-      .trim()
-      .replace(/\/+$/, '');
+    const base = ((environment as any).API_URI).toString().trim().replace(/\/+$/, '');
     const p = path.startsWith('/') ? path : `/${path}`;
     return `${base}${p}`;
   }
@@ -417,6 +510,7 @@ export class TurnosComponent implements OnDestroy {
     this.query.set(v ?? '');
   }
 
+  // filtro por trabajador: solo UI
   setWorkerId(v: string) {
     this.workerId.set(v ?? '');
   }
@@ -426,10 +520,17 @@ export class TurnosComponent implements OnDestroy {
   }
 
   selectNextDue() {
-    const items = this.results();
+    const items = this.baseByWorker();
     const now = this.nowMs();
+
     const due = items
-      .filter(a => a.status !== 'CANCELLED' && a.status !== 'NO_SHOW' && !this.isPaid(a) && this.ms(a.end_datetime) <= now)
+      .filter(
+        a =>
+          a.status !== 'CANCELLED' &&
+          a.status !== 'NO_SHOW' &&
+          !this.isPaid(a) &&
+          this.ms(a.end_datetime) <= now
+      )
       .sort((a, b) => this.ms(b.end_datetime) - this.ms(a.end_datetime))[0];
 
     if (due) {
@@ -461,18 +562,98 @@ export class TurnosComponent implements OnDestroy {
   // -----------------------------
   // Catálogo
   // -----------------------------
+  private normalizeWorkers(res: any, role?: Group): Worker[] {
+    const arr = Array.isArray(res) ? res : Array.isArray(res?.results) ? res.results : [];
+    const roleText = (r?: Group) =>
+      r === 'BARBER' ? 'Barber'
+        : r === 'NAILS' ? 'Uñas'
+          : r === 'FACIAL' ? 'Facial'
+            : '';
+
+    return arr.map((x: any) => {
+      const id = Number(x.id);
+      const baseLabel =
+        x.label ??
+        x.display_name ??
+        x.name ??
+        x.full_name ??
+        x.fullName ??
+        x.username ??
+        `Worker ${id}`;
+
+      const rawRole = (x.role ?? x.group ?? x.category ?? '').toString().toUpperCase();
+      const inferred: Group | undefined =
+        rawRole.includes('NAIL') || rawRole.includes('UÑ') || rawRole.includes('UNA') ? 'NAILS'
+          : rawRole.includes('FAC') ? 'FACIAL'
+            : rawRole.includes('BARB') ? 'BARBER'
+              : undefined;
+
+      const finalRole = role ?? inferred;
+
+      return {
+        id,
+        label: String(baseLabel),
+        labelFull: finalRole ? `${baseLabel} • ${roleText(finalRole)}` : String(baseLabel),
+        role: finalRole,
+      };
+    });
+  }
+
+  private loadWorkersAll$() {
+    const allUrl = this.api('/api/public/workers/');
+    const bUrl = this.api('/api/public/workers/barbers/');
+    const nUrl = this.api('/api/public/workers/nails/');
+    const fUrl = this.api('/api/public/workers/facial/');
+
+    const safeGet = (url: string) =>
+      this.http.get<any>(url, { withCredentials: true }).pipe(catchError(() => of({ results: [] })));
+
+    return forkJoin({
+      all: safeGet(allUrl),
+      barbers: safeGet(bUrl),
+      nails: safeGet(nUrl),
+      facial: safeGet(fUrl),
+    }).pipe(
+      map(({ all, barbers, nails, facial }) => {
+        const merged: Worker[] = [
+          ...this.normalizeWorkers(all),
+          ...this.normalizeWorkers(barbers, 'BARBER'),
+          ...this.normalizeWorkers(nails, 'NAILS'),
+          ...this.normalizeWorkers(facial, 'FACIAL'),
+        ];
+
+        const mapById = new Map<number, Worker>();
+        for (const w of merged) {
+          if (!w?.id) continue;
+          const prev = mapById.get(w.id);
+          if (!prev) mapById.set(w.id, w);
+          else {
+            const better = {
+              ...prev,
+              ...w,
+              role: w.role ?? prev.role,
+              labelFull: w.labelFull ?? prev.labelFull,
+            };
+            mapById.set(w.id, better);
+          }
+        }
+
+        return Array.from(mapById.values()).sort((a, b) => a.label.localeCompare(b.label));
+      })
+    );
+  }
+
   loadCatalog() {
     this.catalogLoading.set(true);
 
     const svcUrl = this.api('/api/staff/services/');
-    const wUrl = this.api('/api/public/workers/barbers/');
+    const svc$ = this.http.get<any>(svcUrl, { withCredentials: true }).pipe(catchError(() => of({ results: [] })));
 
-    const svc$ = this.http.get<any>(svcUrl, { withCredentials: true });
-    const w$ = this.http.get<any>(wUrl, { withCredentials: true });
+    const workers$ = this.loadWorkersAll$().pipe(catchError(() => of([] as Worker[])));
 
-    svc$.subscribe({
-      next: (res) => {
-        const arr = Array.isArray(res) ? res : (Array.isArray(res?.results) ? res.results : []);
+    forkJoin({ svc: svc$, workers: workers$ }).subscribe({
+      next: ({ svc, workers }) => {
+        const arr = Array.isArray(svc) ? svc : Array.isArray(svc?.results) ? svc.results : [];
         const normalized: Service[] = arr.map((x: any) => ({
           id: Number(x.id),
           name: x.name ?? `Servicio ${x.id}`,
@@ -484,33 +665,15 @@ export class TurnosComponent implements OnDestroy {
           active: typeof x.active === 'boolean' ? x.active : true,
         }));
         this.services.set(normalized);
+        this.workers.set(workers);
       },
       error: () => {
         this.services.set([]);
-      }
-    });
-
-    w$.subscribe({
-      next: (res) => {
-        const arr = Array.isArray(res) ? res : (Array.isArray(res?.results) ? res.results : []);
-        const normalized: Worker[] = arr.map((x: any) => ({
-          id: Number(x.id),
-          label:
-            x.label ??
-            x.display_name ??
-            x.name ??
-            x.full_name ??
-            x.fullName ??
-            x.username ??
-            `Worker ${x.id}`,
-        }));
-        this.workers.set(normalized);
+        this.workers.set([]);
+      },
+      complete: () => {
         this.catalogLoading.set(false);
       },
-      error: () => {
-        this.workers.set([]);
-        this.catalogLoading.set(false);
-      }
     });
   }
 
@@ -524,17 +687,9 @@ export class TurnosComponent implements OnDestroy {
     const requestUrl = this.api('/api/agenda/staff/');
     let params = new HttpParams().set('date', this.date());
 
-    const st = this.status();
-    if (st !== 'ALL') params = params.set('status', st);
-
-    const q = this.query().trim();
-    if (q) params = params.set('q', q);
-
-    const wid = this.workerId().trim();
-    if (wid) params = params.set('worker_id', wid);
-
+    // Importante: solo date al backend. Los filtros (status/query/worker) son 100% UI.
     this.http.get<StaffAgendaResponse>(requestUrl, { params, withCredentials: true }).subscribe({
-      next: (res) => {
+      next: res => {
         this.loading.set(false);
         const items = Array.isArray(res?.results) ? res.results : [];
         this.results.set(items);
@@ -543,7 +698,7 @@ export class TurnosComponent implements OnDestroy {
         if (current && items.some(x => x.id === current)) return;
         this.selectedId.set(items[0]?.id ?? null);
       },
-      error: (err) => {
+      error: err => {
         this.loading.set(false);
         this.setHttpError(err, requestUrl);
       },
@@ -573,8 +728,8 @@ export class TurnosComponent implements OnDestroy {
   openPayment(ap: Appointment) {
     if (!ap) return;
 
-    if (!this.isBillable(ap)){
-      this,this.toastMsg('Este turno no se cobra, no asistiío o cancelo su turno.');
+    if (!this.isBillable(ap)) {
+      this.toastMsg('Este turno no se cobra (no asistió o canceló).');
       return;
     }
 
@@ -582,9 +737,7 @@ export class TurnosComponent implements OnDestroy {
     this.error.set('');
     this.payMethod.set('CASH');
     this.payNote.set('');
-
-    const rec = (ap.recommended_total ?? '').toString().trim();
-    this.payAmount.set(rec && rec !== '0' ? rec : '');
+    this.payAmount.set(this.toIntString(ap.recommended_total));
     this.payOpen.set(true);
   }
 
@@ -595,13 +748,12 @@ export class TurnosComponent implements OnDestroy {
   async quickCheckout(ap: Appointment) {
     if (!ap) return;
 
-    if (!this.isBillable(ap)){
-      this.toastMsg('este turno no se cobra no asistió o cancelo su turno');
+    if (!this.isBillable(ap)) {
+      this.toastMsg('Este turno no se cobra (no asistió o canceló).');
       return;
     }
     if (this.isPaid(ap)) return;
 
-    // si está RESERVED, lo finalizamos primero y luego cobramos (para recepción es lo ideal)
     if (ap.status === 'RESERVED') {
       try {
         this.busyId.set(ap.id);
@@ -623,10 +775,8 @@ export class TurnosComponent implements OnDestroy {
   savePayment(ap: Appointment) {
     if (!ap) return;
 
-    const raw = this.payAmount().toString().trim().replace(',', '.');
-    const amt = Number(raw);
-
-    if (!raw || Number.isNaN(amt) || amt <= 0) {
+    const amt = Math.trunc(this.toNum(this.payAmount()));
+    if (!amt || !Number.isFinite(amt) || amt <= 0) {
       this.error.set('Ingresa un valor de pago válido.');
       return;
     }
@@ -648,7 +798,7 @@ export class TurnosComponent implements OnDestroy {
         this.toastMsg('Pago registrado.');
         this.refresh();
       },
-      error: (err) => {
+      error: err => {
         this.busyId.set(null);
         this.setHttpError(err, url);
       },
@@ -666,7 +816,7 @@ export class TurnosComponent implements OnDestroy {
         onOk();
         this.toastMsg('Acción aplicada.');
       },
-      error: (err) => {
+      error: err => {
         this.busyId.set(null);
         this.setHttpError(err, url);
       },
@@ -732,9 +882,8 @@ export class TurnosComponent implements OnDestroy {
     if (!svc.length) return { ok: false, msg: 'Selecciona al menos un servicio.' };
 
     if (this.cRegisterPayment()) {
-      const raw = this.cPayAmount().toString().trim().replace(',', '.');
-      const amt = Number(raw);
-      if (!raw || Number.isNaN(amt) || amt <= 0) return { ok: false, msg: 'Pago inválido.' };
+      const amt = Math.trunc(this.toNum(this.cPayAmount()));
+      if (!amt || !Number.isFinite(amt) || amt <= 0) return { ok: false, msg: 'Pago inválido.' };
     }
 
     return { ok: true };
@@ -760,7 +909,12 @@ export class TurnosComponent implements OnDestroy {
       const date = this.date();
       const time = this.cTime().trim();
 
-      const option_id = await this.resolveOptionIdFromAvailability(date, time, service_ids);
+      const option_id = await this.resolveOptionIdFromAvailability(
+        date,
+        time,
+        service_ids,
+        this.cWorkerId()
+      );
 
       const payload: any = {
         option_id,
@@ -769,16 +923,13 @@ export class TurnosComponent implements OnDestroy {
           name,
           phone: customer_type === 'FREQUENT' ? phone : null,
           birth_date: customer_type === 'FREQUENT' ? birth_date : null,
-        }
+        },
       };
 
       const res: any = await firstValueFrom(this.booking.createPublicAppointment(payload));
 
       const createdId =
-        Number(res?.appointment_id) ||
-        Number(res?.id) ||
-        Number(res?.appointment?.id) ||
-        null;
+        Number(res?.appointment_id) || Number(res?.id) || Number(res?.appointment?.id) || null;
 
       this.toastMsg(createdId ? `Turno creado #${createdId}` : 'Turno creado.');
       this.refresh();
@@ -789,8 +940,7 @@ export class TurnosComponent implements OnDestroy {
       }
 
       if (createdId && this.cRegisterPayment()) {
-        const raw = this.cPayAmount().toString().trim().replace(',', '.');
-        const amt = Number(raw);
+        const amt = Math.trunc(this.toNum(this.cPayAmount()));
         const url = this.api(`/api/appointments/${createdId}/payment/`);
         const payPayload: any = { paid_total: amt, payment_method: this.cPayMethod() };
         this.http.post<any>(url, payPayload, { withCredentials: true }).subscribe({
@@ -809,7 +959,270 @@ export class TurnosComponent implements OnDestroy {
   }
 
   // -----------------------------
-  // Availability -> option_id
+  // ✅ EDITAR turno (modal)
+  // -----------------------------
+  openEdit(ap: Appointment) {
+    if (!ap) return;
+
+    if (this.isPaid(ap)) {
+      const ok = confirm('Este turno ya tiene pago registrado. ¿Deseas editarlo de todas formas?');
+      if (!ok) return;
+    }
+
+    this.selectedId.set(ap.id);
+    this.error.set('');
+
+    this.eMode.set('RESCHEDULE');
+    this.eTime.set(this.hhmmFromDatetime(ap.start_datetime));
+
+    const dur = this.durationMins(ap.start_datetime, ap.end_datetime);
+    this.eDuration.set(dur || 0);
+
+    const svcIds = this.extractServiceIds(ap);
+    this.eSelectedServiceIds.set(svcIds);
+
+    // ✅ Barbero correcto según los servicios/barber-block
+    const barberId = this.findBarberWorkerIdFromBlocks(ap, svcIds);
+    this.eBarberId.set(barberId || 'AUTO');
+
+    this.eServiceQuery.set('');
+    this.eNote.set('');
+    this.editOpen.set(true);
+  }
+
+  closeEdit() {
+    this.editOpen.set(false);
+  }
+
+  toggleEditService(id: number) {
+    const set = new Set(this.eSelectedServiceIds());
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    this.eSelectedServiceIds.set(Array.from(set));
+  }
+
+  async saveEdit(ap: Appointment) {
+    if (!ap) return;
+
+    this.error.set('');
+
+    const date = this.date();
+    const time = (this.eTime() ?? '').trim();
+    const service_ids = this.eSelectedServiceIds().map(Number).filter(n => Number.isFinite(n));
+    const note = (this.eNote() ?? '').trim();
+
+    if (!time) {
+      this.error.set('Selecciona una hora (HH:MM).');
+      return;
+    }
+    if (!service_ids.length) {
+      this.error.set('Selecciona al menos un servicio.');
+      return;
+    }
+
+    this.busyId.set(ap.id);
+
+    try {
+      if (this.eMode() === 'RESCHEDULE') {
+        // payload “nuevo backend” (deja que el backend resuelva internamente)
+        const workerRaw = (this.eBarberId() ?? '').trim();
+        const workerIdNum = workerRaw && workerRaw !== 'AUTO' ? Number(workerRaw) : null;
+
+        const basePayload: any = {
+          date,
+          time,
+          service_ids,
+          note: note || null,
+          // aliases típicos
+          appointment_date: date,
+          appointment_time: time,
+        };
+
+        if (this.hasBarberServicesSelected(service_ids)) {
+          basePayload.barber_choice = workerIdNum ? 'SPECIFIC' : 'NEAREST';
+          basePayload.barber_id = workerIdNum ? Number(workerIdNum) : null;
+
+          // aliases comunes
+          basePayload.worker_id = workerIdNum ? Number(workerIdNum) : null;
+          basePayload.worker = workerIdNum ? Number(workerIdNum) : null;
+        }
+
+        // 1) ✅ Intenta editar sin option_id (backend actualizado)
+        try {
+          await this.tryEndpoints([
+            { method: 'POST', url: this.api(`/api/appointments/${ap.id}/reschedule/`), body: basePayload },
+            { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/reschedule/`), body: basePayload },
+            { method: 'PATCH', url: this.api(`/api/appointments/${ap.id}/`), body: basePayload },
+            { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/`), body: basePayload },
+          ]);
+
+          this.toastMsg('Turno reprogramado.');
+          this.editOpen.set(false);
+          this.refresh();
+          return;
+        } catch (e1: any) {
+          // sigue al plan B (option_id)
+        }
+
+        // 2) ✅ Plan B: calcular option_id desde disponibilidad y enviar option_id
+        const option_id = await this.resolveOptionIdFromAvailability(date, time, service_ids, this.eBarberId());
+
+        await this.tryEndpoints([
+          {
+            method: 'PATCH',
+            url: this.api(`/api/appointments/${ap.id}/`),
+            body: { option_id, note: note || null },
+          },
+          {
+            method: 'PATCH',
+            url: this.api(`/api/staff/appointments/${ap.id}/`),
+            body: { option_id, note: note || null },
+          },
+          {
+            method: 'POST',
+            url: this.api(`/api/appointments/${ap.id}/reschedule/`),
+            body: { option_id, note: note || null },
+          },
+          {
+            method: 'POST',
+            url: this.api(`/api/staff/appointments/${ap.id}/reschedule/`),
+            body: { option_id, note: note || null },
+          },
+          {
+            method: 'POST',
+            url: this.api(`/api/appointments/${ap.id}/change-option/`),
+            body: { option_id, note: note || null },
+          },
+        ]);
+
+        this.toastMsg('Turno reprogramado.');
+        this.editOpen.set(false);
+        this.refresh();
+        return;
+      }
+
+      // MANUAL: ajustar duración/hora fin sin validar disponibilidad
+      const duration = Number(this.eDuration() ?? 0);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        this.error.set('Ingresa una duración válida en minutos.');
+        return;
+      }
+
+      const startDt = this.buildIsoWithOffset(date, time);
+      const endDt = this.buildIsoWithOffsetFromStart(date, time, duration);
+
+      await this.tryEndpoints([
+        {
+          method: 'PATCH',
+          url: this.api(`/api/appointments/${ap.id}/`),
+          body: { start_datetime: startDt, end_datetime: endDt, service_ids, note: note || null },
+        },
+        {
+          method: 'POST',
+          url: this.api(`/api/appointments/${ap.id}/override/`),
+          body: { start_datetime: startDt, end_datetime: endDt, service_ids, note: note || null },
+        },
+        {
+          method: 'POST',
+          url: this.api(`/api/appointments/${ap.id}/manual/`),
+          body: { start_datetime: startDt, end_datetime: endDt, service_ids, note: note || null },
+        },
+        {
+          method: 'POST',
+          url: this.api(`/api/appointments/${ap.id}/reschedule/`),
+          body: { start_datetime: startDt, end_datetime: endDt, service_ids, note: note || null },
+        },
+      ]);
+
+      this.toastMsg('Turno actualizado (ajuste manual).');
+      this.editOpen.set(false);
+      this.refresh();
+    } catch (e: any) {
+      const msg = this.extractDetailFromAny(e) || 'No se pudo editar el turno.';
+      this.error.set(msg);
+    } finally {
+      this.busyId.set(null);
+    }
+  }
+
+  private async tryEndpoints(attempts: Array<{ method: 'POST' | 'PATCH' | 'PUT'; url: string; body: any }>) {
+    let lastErr: any = null;
+
+    for (const a of attempts) {
+      try {
+        const res = await firstValueFrom(
+          this.http.request<any>(a.method, a.url, {
+            body: a.body,
+            withCredentials: true,
+          })
+        );
+        return res;
+      } catch (err: any) {
+        lastErr = err;
+        const status = err?.status ?? 0;
+
+        // no seguir intentando si es auth
+        if (status === 401 || status === 403) throw err;
+
+        // en 404/405/400 puede ser que el endpoint/serializer no exista: probamos siguiente
+        if ([400, 404, 405, 422].includes(status)) continue;
+
+        // otros errores: cortar
+        throw err;
+      }
+    }
+
+    throw lastErr;
+  }
+
+  private extractServiceIds(ap: Appointment): number[] {
+    const out = new Set<number>();
+
+    const byName = new Map<string, number>();
+    for (const s of this.services()) {
+      const key = String(s.name ?? '').trim().toLowerCase();
+      if (key) byName.set(key, s.id);
+    }
+
+    const pickId = (raw: any): number | null => {
+      const id =
+        raw?.id ??
+        raw?.service_id ??
+        raw?.serviceId ??
+        raw?.service?.id ??
+        raw?.service?.pk ??
+        raw?.pk ??
+        null;
+
+      const n = Number(id);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+
+    const pickName = (raw: any): number | null => {
+      const name =
+        raw?.name ??
+        raw?.service_name ??
+        raw?.service?.name ??
+        raw?.serviceName ??
+        '';
+      const key = String(name).trim().toLowerCase();
+      if (!key) return null;
+      const mapped = byName.get(key);
+      return mapped ? Number(mapped) : null;
+    };
+
+    for (const b of ap.blocks ?? []) {
+      for (const s of (b as any).services ?? []) {
+        const id = pickId(s) ?? pickName(s);
+        if (id) out.add(id);
+      }
+    }
+
+    return Array.from(out);
+  }
+
+  // -----------------------------
+  // Availability -> option_id (usado en crear y reprogramar)
   // -----------------------------
   private inferGroupFromCategoryName(catName: string): Group {
     const raw = (catName || '').toLowerCase();
@@ -822,17 +1235,48 @@ export class TurnosComponent implements OnDestroy {
   }
 
   private groupOfServiceId(id: number): Group {
-    const s = this.services().find(x => x.id === id);
-    const catName = (s as any)?.category?.name || '';
-    return this.inferGroupFromCategoryName(catName);
+    const s: any = this.services().find(x => x.id === id);
+    if (!s) return 'BARBER';
+
+    const cat =
+      typeof s.category === 'string'
+        ? s.category
+        : (s.category?.name ?? s.category?.nombre ?? '');
+
+    return this.inferGroupFromCategoryName(String(cat || ''));
+  }
+
+  private findBarberWorkerIdFromBlocks(ap: Appointment, serviceIds: number[]): string {
+    // Si el turno tiene servicios BARBER, busca el bloque que tenga alguno de esos servicios
+    const hasBarber = this.hasBarberServicesSelected(serviceIds);
+    if (!hasBarber) return 'AUTO';
+
+    for (const b of ap.blocks ?? []) {
+      const idsInBlock: number[] = [];
+      for (const s of (b as any).services ?? []) {
+        const id = Number((s as any).id ?? (s as any).service_id ?? (s as any).service?.id);
+        if (Number.isFinite(id)) idsInBlock.push(id);
+      }
+      const blockHasBarber = idsInBlock.some(id => this.groupOfServiceId(id) === 'BARBER');
+      if (blockHasBarber && (b as any).worker) return String((b as any).worker);
+    }
+
+    // fallback: primer bloque
+    const b0: any = ap.blocks?.[0];
+    return b0?.worker ? String(b0.worker) : 'AUTO';
   }
 
   private hasBarberServicesSelected(serviceIds: number[]): boolean {
-    return serviceIds.some((id) => this.groupOfServiceId(id) === 'BARBER');
+    return serviceIds.some(id => this.groupOfServiceId(id) === 'BARBER');
   }
 
-  private async resolveOptionIdFromAvailability(date: string, time: string, service_ids: number[]): Promise<string> {
-    const workerRaw = this.cWorkerId().trim();
+  private async resolveOptionIdFromAvailability(
+    date: string,
+    time: string,
+    service_ids: number[],
+    workerRawForBarber: string
+  ): Promise<string> {
+    const workerRaw = (workerRawForBarber ?? '').trim();
     const workerIdNum = workerRaw && workerRaw !== 'AUTO' ? Number(workerRaw) : null;
 
     const payload: any = {
@@ -860,8 +1304,8 @@ export class TurnosComponent implements OnDestroy {
         error: {
           detail:
             'La hora seleccionada no coincide con un slot disponible. ' +
-            'Cambia la hora o selecciona un turno dentro de los disponibles.'
-        }
+            'Cambia la hora o selecciona un turno dentro de los disponibles.',
+        },
       };
     }
 
@@ -873,12 +1317,39 @@ export class TurnosComponent implements OnDestroy {
     return String(rawId);
   }
 
-  private pickAvailabilityOptionByTime(options: AvailabilityOption[], date: string, time: string): AvailabilityOption | null {
+  private pickAvailabilityOptionByTime(
+    options: AvailabilityOption[],
+    date: string,
+    time: string
+  ): AvailabilityOption | null {
     const t = time.length === 5 ? `${time}:00` : time;
     const desired = new Date(`${date}T${t}`);
 
-    const exact = options.find((o: AvailabilityOption) => {
-      const d = new Date((o as any).appointment_start);
+    const startOf = (o: any): Date | null => {
+      const raw =
+        o?.appointment_start ??
+        o?.start_datetime ??
+        o?.start ??
+        o?.start_time ??
+        o?.begin ??
+        null;
+
+      if (!raw) return null;
+
+      // Si viene solo "HH:MM" o "HH:MM:SS"
+      if (typeof raw === 'string' && /^\d{2}:\d{2}(:\d{2})?$/.test(raw.trim())) {
+        const tt = raw.trim().length === 5 ? `${raw.trim()}:00` : raw.trim();
+        const d = new Date(`${date}T${tt}`);
+        return Number.isFinite(d.getTime()) ? d : null;
+      }
+
+      const d = new Date(raw);
+      return Number.isFinite(d.getTime()) ? d : null;
+    };
+
+    const exact = options.find((o: any) => {
+      const d = startOf(o);
+      if (!d) return false;
       return (
         d.getFullYear() === desired.getFullYear() &&
         d.getMonth() === desired.getMonth() &&
@@ -892,8 +1363,9 @@ export class TurnosComponent implements OnDestroy {
     let best: AvailabilityOption | null = null;
     let bestDiff = Number.POSITIVE_INFINITY;
 
-    for (const o of options) {
-      const d = new Date((o as any).appointment_start);
+    for (const o of options as any[]) {
+      const d = startOf(o);
+      if (!d) continue;
       const diff = Math.abs(d.getTime() - desired.getTime());
       if (diff < bestDiff) {
         bestDiff = diff;
@@ -910,8 +1382,20 @@ export class TurnosComponent implements OnDestroy {
   // -----------------------------
   exportCSV() {
     const rows = this.filtered();
-    const head = ['id', 'status', 'start', 'end', 'customer', 'phone', 'worker', 'services', 'recommended_total', 'paid_total', 'payment_method'];
-    const data = rows.map(a => ([
+    const head = [
+      'id',
+      'status',
+      'start',
+      'end',
+      'customer',
+      'phone',
+      'worker',
+      'services',
+      'recommended_total',
+      'paid_total',
+      'payment_method',
+    ];
+    const data = rows.map(a => [
       a.id,
       a.status,
       a.start_datetime,
@@ -923,7 +1407,7 @@ export class TurnosComponent implements OnDestroy {
       a.recommended_total ?? '',
       a.paid_total ?? '',
       a.payment_method ?? '',
-    ]));
+    ]);
 
     const csv = [head, ...data]
       .map(line => line.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
@@ -1004,7 +1488,12 @@ export class TurnosComponent implements OnDestroy {
   dateLabel(iso: string) {
     try {
       const d = new Date(`${iso}T00:00:00`);
-      return d.toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      return d.toLocaleDateString('es-CO', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
     } catch {
       return iso;
     }
@@ -1040,7 +1529,7 @@ export class TurnosComponent implements OnDestroy {
 
   serviceCount(ap: Appointment): number {
     let n = 0;
-    for (const b of ap.blocks) n += (b.services?.length ?? 0);
+    for (const b of ap.blocks) n += b.services?.length ?? 0;
     return n;
   }
 
@@ -1057,7 +1546,6 @@ export class TurnosComponent implements OnDestroy {
       .map(b => (b.worker_label ?? '').trim())
       .filter(Boolean);
     if (!labels.length) return '—';
-    // si hay varios, muestra el primero (recepción suele necesitar el principal)
     return labels[0];
   }
 
@@ -1086,7 +1574,7 @@ export class TurnosComponent implements OnDestroy {
     const e = this.ms(ap.end_datetime);
 
     if (e <= now) return 'DUE';
-    if (e > now && (e - now) <= 15 * 60_000) return 'ENDING';
+    if (e > now && e - now <= 15 * 60_000) return 'ENDING';
     if (now >= s && now < e) return 'RUN';
     return 'OTHER';
   }
@@ -1111,7 +1599,6 @@ export class TurnosComponent implements OnDestroy {
     if (k === 'ENDING') return 'Por terminar';
     if (k === 'RUN') return 'En curso';
 
-    // si está próximo (inicio en 10 min)
     const now = this.nowMs();
     const s = this.ms(ap.start_datetime);
     const toStart = Math.round((s - now) / 60000);
@@ -1136,7 +1623,12 @@ export class TurnosComponent implements OnDestroy {
   money(v: any): string {
     const n = typeof v === 'number' ? v : this.toNum(v);
     try {
-      return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n);
+      return new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'COP',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(n);
     } catch {
       return `$${n}`;
     }
@@ -1149,11 +1641,40 @@ export class TurnosComponent implements OnDestroy {
     return `${y}-${m}-${day}`;
   }
 
+  // Soporta: "30000.00", "30.000", "30.000,50", "$ 30.000"
   private toNum(v: any): number {
     if (v == null) return 0;
-    const s = String(v).replace(',', '.').replace(/[^\d.]/g, '');
+
+    let s = String(v).trim();
+    s = s.replace(/\s/g, '').replace(/[^\d.,-]/g, '');
+
+    const neg = s.startsWith('-');
+    s = s.replace(/-/g, '');
+
+    const hasDot = s.includes('.');
+    const hasComma = s.includes(',');
+
+    if (hasDot && hasComma) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else if (hasComma && !hasDot) {
+      s = s.replace(',', '.');
+    } else if (hasDot && !hasComma) {
+      const lastDot = s.lastIndexOf('.');
+      const decPart = s.slice(lastDot + 1);
+      if (decPart.length === 3 && /^\d{3}$/.test(decPart)) {
+        s = s.replace(/\./g, '');
+      }
+    }
+
     const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
+    const out = neg ? -n : n;
+    return Number.isFinite(out) ? out : 0;
+  }
+
+  private toIntString(v: any): string {
+    const n = this.toNum(v);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return String(Math.trunc(n));
   }
 
   private toastMsg(msg: string) {
@@ -1161,5 +1682,72 @@ export class TurnosComponent implements OnDestroy {
     setTimeout(() => {
       if (this.toast() === msg) this.toast.set('');
     }, 2400);
+  }
+
+  // ============================
+  // ✅ Helpers edición tiempo ISO con offset
+  // ============================
+  private hhmmFromDatetime(dt: string): string {
+    try {
+      const d = new Date(dt);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    } catch {
+      return '';
+    }
+  }
+
+  private addMinutesToHHMM(time: string, mins: number): string {
+    const t = (time ?? '').trim();
+    if (!t) return '';
+    const [hh, mm] = t.split(':').map(x => Number(x));
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return '';
+    const base = new Date(`${this.date()}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+    const end = new Date(base.getTime() + mins * 60_000);
+    const eh = String(end.getHours()).padStart(2, '0');
+    const em = String(end.getMinutes()).padStart(2, '0');
+    return `${eh}:${em}`;
+  }
+
+  private buildIsoWithOffset(date: string, time: string): string {
+    const t = time.length === 5 ? `${time}:00` : time;
+    const d = new Date(`${date}T${t}`);
+
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+
+    const offMin = -d.getTimezoneOffset(); // ej Colombia: -300
+    const sign = offMin >= 0 ? '+' : '-';
+    const abs = Math.abs(offMin);
+    const oh = String(Math.floor(abs / 60)).padStart(2, '0');
+    const om = String(abs % 60).padStart(2, '0');
+
+    return `${y}-${m}-${day}T${hh}:${mm}:${ss}${sign}${oh}:${om}`;
+  }
+
+  private buildIsoWithOffsetFromStart(date: string, time: string, addMinutes: number): string {
+    const t = time.length === 5 ? `${time}:00` : time;
+    const start = new Date(`${date}T${t}`);
+    const end = new Date(start.getTime() + addMinutes * 60_000);
+
+    const y = end.getFullYear();
+    const m = String(end.getMonth() + 1).padStart(2, '0');
+    const day = String(end.getDate()).padStart(2, '0');
+    const hh = String(end.getHours()).padStart(2, '0');
+    const mm = String(end.getMinutes()).padStart(2, '0');
+    const ss = String(end.getSeconds()).padStart(2, '0');
+
+    const offMin = -end.getTimezoneOffset();
+    const sign = offMin >= 0 ? '+' : '-';
+    const abs = Math.abs(offMin);
+    const oh = String(Math.floor(abs / 60)).padStart(2, '0');
+    const om = String(abs % 60).padStart(2, '0');
+
+    return `${y}-${m}-${day}T${hh}:${mm}:${ss}${sign}${oh}:${om}`;
   }
 }

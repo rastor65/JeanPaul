@@ -93,10 +93,29 @@
     </div>
 
     <div class="rightFilters">
+      <!-- FILTRO POR TRABAJADOR -->
+      <div class="field mini">
+        <span class="field__icon" aria-hidden="true">TRB</span>
+
+        <select class="mini__input"
+                [value]="workerId()"
+                (change)="setWorkerId(($any($event.target)).value)">
+          <option value="">Todos los trabajadores</option>
+          <option *ngFor="let w of barberWorkers()" [value]="w.id">{{ w.label }}</option>
+        </select>
+
+        <button class="wclear" type="button" *ngIf="workerId()" (click)="setWorkerId('')" aria-label="Quitar filtro">
+          ×
+        </button>
+      </div>
+
+      <!-- BUSCADOR -->
       <div class="search">
         <span class="search__icon" aria-hidden="true">⌕</span>
-        <input class="search__input" type="search" placeholder="Buscar por cliente, teléfono, servicio o trabajador…"
-          [value]="query()" (input)="setQuery(($any($event.target)).value)" />
+        <input class="search__input" type="search"
+               placeholder="Buscar por cliente, teléfono, servicio o trabajador…"
+               [value]="query()"
+               (input)="setQuery(($any($event.target)).value)" />
         <button class="search__clear" type="button" *ngIf="query()" (click)="setQuery('')">×</button>
       </div>
     </div>
@@ -165,7 +184,7 @@
           <span>Trabajador</span>
           <select class="in" [value]="cWorkerId()" (change)="cWorkerId.set(($any($event.target)).value)">
             <option value="AUTO">Disponible más cercano (AUTO)</option>
-            <option *ngFor="let w of workers()" [value]="w.id">{{ w.label }}</option>
+            <option *ngFor="let w of workers()" [value]="w.id">{{ w.labelFull || w.label }}</option>
           </select>
         </label>
 
@@ -219,12 +238,12 @@
         </div>
 
         <div class="svcGrid" *ngIf="services().length; else noServices">
-          <button class="svc" type="button" *ngFor="let s of cServicesFiltered()" (click)="toggleService(s.id)"
+          <button class="svcPick" type="button" *ngFor="let s of cServicesFiltered()" (click)="toggleService(s.id)"
             [class.on]="cSelectedServiceIds().includes(s.id)">
-            <div class="svc__name">{{ s.name }}</div>
-            <div class="svc__meta">
+            <div class="svcPick__name">{{ s.name }}</div>
+            <div class="svcPick__meta">
               <span *ngIf="s.duration_minutes">{{ s.duration_minutes }} min</span>
-              <span *ngIf="s.price">• ${{ s.price }}</span>
+              <span *ngIf="s.price">• {{ money(s.price) }}</span>
             </div>
           </button>
         </div>
@@ -258,7 +277,7 @@
         </div>
       </div>
 
-      <!-- ✅ CAJA RÁPIDA -->
+      <!-- CAJA RÁPIDA -->
       <div class="queueBox" *ngIf="!loading() && results().length">
         <div class="queueHead">
           <div class="queueTitle">
@@ -466,16 +485,16 @@
         <div class="card">
           <div class="card__title">Bloques y servicios</div>
 
-          <div class="svc" *ngFor="let b of ap.blocks">
-            <div class="svc__head">
-              <span class="svc__wk">Bloque {{ b.sequence }}</span>
-              <span class="svc__wk muted">{{ b.worker_label }}</span>
+          <div class="svcBlock" *ngFor="let b of ap.blocks">
+            <div class="svcBlock__head">
+              <span class="svcBlock__wk">Bloque {{ b.sequence }}</span>
+              <span class="svcBlock__wk muted">{{ b.worker_label }}</span>
             </div>
 
-            <div class="svc__list">
-              <div class="svc__item" *ngFor="let s of b.services">
-                <span class="svc__dot" aria-hidden="true"></span>
-                <div class="svc__txt">
+            <div class="svcBlock__list">
+              <div class="svcBlock__item" *ngFor="let s of b.services">
+                <span class="svcBlock__dot" aria-hidden="true"></span>
+                <div class="svcBlock__txt">
                   <strong>{{ s.name }}</strong>
                   <span class="muted">
                     {{ s.duration_minutes }} min
@@ -528,6 +547,10 @@
         </div>
 
         <div class="actions">
+          <button class="btn btn--ghost" type="button" [disabled]="busyId() === ap.id" (click)="openEdit(ap)">
+            Editar turno
+          </button>
+
           <button class="btn btn--primary" type="button" [disabled]="busyId() === ap.id || ap.status !== 'RESERVED'"
             (click)="markAttend(ap)">
             {{ busyId() === ap.id ? 'Procesando…' : 'Marcar atendido' }}
@@ -598,6 +621,121 @@
           <button class="btn btn--ghost" type="button" (click)="closePayment()">Cancelar</button>
           <button class="btn btn--primary" type="button" [disabled]="busyId() === ap.id" (click)="savePayment(ap)">
             {{ busyId() === ap.id ? 'Guardando…' : 'Guardar pago' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT MODAL -->
+  <div class="overlay" *ngIf="editOpen()">
+    <div class="modal modal--wide">
+      <div class="modal__head">
+        <div>
+          <strong>Editar turno</strong>
+          <div class="muted" *ngIf="selected() as ap">Turno #{{ ap.id }}</div>
+        </div>
+        <button class="x" type="button" (click)="closeEdit()">×</button>
+      </div>
+
+      <div class="modal__body" *ngIf="selected() as ap">
+        <div class="emode">
+          <button class="ebtn" type="button" [class.on]="eMode()==='RESCHEDULE'" (click)="eMode.set('RESCHEDULE')">
+            Reprogramar
+          </button>
+          <button class="ebtn" type="button" [class.on]="eMode()==='MANUAL'" (click)="eMode.set('MANUAL')">
+            Ajuste manual
+          </button>
+        </div>
+
+        <div class="ehelp" *ngIf="eMode()==='RESCHEDULE'">
+          Reprogramar recalcula disponibilidad según servicios y barbero. Útil para cambiar barbero, hora o servicios.
+        </div>
+        <div class="ehelp" *ngIf="eMode()==='MANUAL'">
+          Ajuste manual permite extender/reducir duración sin validar disponibilidad (eventualidades).
+        </div>
+
+        <div class="egrid">
+          <label class="mfield">
+            <span>Hora inicio</span>
+            <input class="minput" type="time" [value]="eTime()"
+              (change)="eTime.set(($any($event.target)).value)" />
+          </label>
+
+          <label class="mfield" *ngIf="eMode()==='MANUAL'">
+            <span>Duración (min)</span>
+            <input class="minput" type="number" min="5" step="5" [value]="eDuration()"
+              (input)="eDuration.set(Number(($any($event.target)).value))" />
+          </label>
+
+          <div class="mfield" *ngIf="eMode()==='MANUAL'">
+            <span>Hora fin</span>
+            <div class="readonly">{{ eEndTime() }}</div>
+          </div>
+
+          <div class="mfield" *ngIf="eMode()==='RESCHEDULE'">
+            <span>Duración por servicios</span>
+            <div class="readonly">{{ eDurationByServices() }} min</div>
+          </div>
+
+          <label class="mfield" *ngIf="eMode()==='RESCHEDULE' && eHasBarberServices()">
+            <span>Barbero</span>
+            <select class="mselect" [value]="eBarberId()"
+              (change)="eBarberId.set(($any($event.target)).value)">
+              <option value="AUTO">Disponible más cercano (AUTO)</option>
+              <option *ngFor="let w of barberWorkers()" [value]="w.id">{{ w.label }}</option>
+            </select>
+          </label>
+
+          <div class="mfield" *ngIf="eMode()==='RESCHEDULE' && !eHasBarberServices()">
+            <span>Barbero</span>
+            <div class="readonly muted">No aplica (este turno no incluye servicios de barbería).</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="svcPickWrap">
+          <div class="svcPickHead">
+            <strong>Servicios</strong>
+            <span class="muted">Ajusta servicios para recalcular duración y reprogramar.</span>
+          </div>
+
+          <div class="svcSearch">
+            <span class="svcSearch__icon" aria-hidden="true">⌕</span>
+            <input class="svcSearch__input" type="search" placeholder="Buscar servicio…" [value]="eServiceQuery()"
+              (input)="eServiceQuery.set(($any($event.target)).value)" />
+          </div>
+
+          <div class="svcGrid" *ngIf="services().length; else noServicesEdit">
+            <button class="svcPick" type="button" *ngFor="let s of eServicesFiltered()"
+              (click)="toggleEditService(s.id)" [class.on]="eSelectedServiceIds().includes(s.id)">
+              <div class="svcPick__name">{{ s.name }}</div>
+              <div class="svcPick__meta">
+                <span *ngIf="s.duration_minutes">{{ s.duration_minutes }} min</span>
+                <span *ngIf="s.price">• {{ money(s.price) }}</span>
+              </div>
+            </button>
+          </div>
+
+          <ng-template #noServicesEdit>
+            <div class="emptyBox">
+              <strong>No hay servicios cargados</strong>
+              <span class="muted">No se puede reprogramar sin catálogo de servicios.</span>
+            </div>
+          </ng-template>
+        </div>
+
+        <label class="mfield">
+          <span>Motivo / nota (opcional)</span>
+          <input class="minput" type="text" placeholder="Ej: se extendió 10 min por eventualidad" [value]="eNote()"
+            (input)="eNote.set(($any($event.target)).value)" />
+        </label>
+
+        <div class="modal__actions">
+          <button class="btn btn--ghost" type="button" (click)="closeEdit()">Cancelar</button>
+          <button class="btn btn--primary" type="button" [disabled]="busyId() === ap.id" (click)="saveEdit(ap)">
+            {{ busyId() === ap.id ? 'Guardando…' : 'Guardar cambios' }}
           </button>
         </div>
       </div>

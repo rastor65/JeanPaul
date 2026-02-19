@@ -6,6 +6,7 @@ from booking.api.agenda import StaffAgendaAPIView, MyAgendaAPIView
 from booking.api.public_appointments import PublicAppointmentCreateAPIView
 from booking.api_customers_staff import CustomerStaffListCreateAPIView, CustomerStaffDetailAPIView
 from booking.views import AppointmentStaffList
+from booking.api.reschedule import AppointmentRescheduleAPIView
 
 from booking.api.management import (
     CancelAppointmentAPIView,
@@ -36,5 +37,6 @@ urlpatterns = [
     path("staff/customers/<int:pk>/", CustomerStaffDetailAPIView.as_view(), name="staff-customers-detail"),
 
     path("appointments/staff/", AppointmentStaffList.as_view(), name="appointments-staff"),
+    path("appointments/<int:appointment_id>/reschedule/", AppointmentRescheduleAPIView.as_view(), name="appointment-reschedule"),
     
 ]
