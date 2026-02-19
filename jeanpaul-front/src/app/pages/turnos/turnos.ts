@@ -1035,8 +1035,8 @@ export class TurnosComponent implements OnDestroy {
       if (mode === 'MANUAL') {
         const body: any = {
           service_ids,
-          note: noteOrReason, // inline-edit usa "note" (según tu serializer)
-          // worker_id: null, // (no lo mando para no romper si tu cita es por blocks)
+          duration_minutes: this.eDurationByServices(),
+          note: noteOrReason,
         };
 
         await this.tryEndpoints([
