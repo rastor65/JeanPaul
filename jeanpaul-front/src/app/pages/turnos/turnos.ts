@@ -1,10 +1,14 @@
+// turnos.component.ts
 import { CommonModule } from '@angular/common';
 import { Component, computed, effect, inject, OnDestroy, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { BookingService, AvailabilityOption } from '../../core/services/booking';
-import { firstValueFrom, forkJoin, of } from 'rxjs';
+import { firstValueFrom, forkJoin, Observable, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
+import { WorkerItineraryModalComponent } from '../../shared/worker-itinerary-modal/worker-itinerary-modal';
+import { ReserveModalComponent } from '../../shared/reserve-modal/reserve-modal';
+import { ReserveUiService } from '../../shared/reserve-ui.service';
 
 type StatusFilter = 'ALL' | 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
 type Status = 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
@@ -84,11 +88,14 @@ type StaffAgendaResponse = {
 @Component({
   selector: 'app-turnos',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, WorkerItineraryModalComponent, ReserveModalComponent],
   templateUrl: './turnos.html',
   styleUrl: './turnos.scss',
 })
 export class TurnosComponent implements OnDestroy {
+  private reserveUi = inject(ReserveUiService)
+  reserveOpen$: Observable<boolean> = this.reserveUi.open$;
+
   private http = inject(HttpClient);
   private booking = inject(BookingService);
 
@@ -97,6 +104,15 @@ export class TurnosComponent implements OnDestroy {
   query = signal<string>('');
   API_URI = environment.API_URI;
   editing = signal(false);
+
+  itOpen = signal<boolean>(false);
+  readonly itineraryOpen = this.itOpen;
+
+  reserveOpen = signal<boolean>(false);
+
+  reservePrefill = signal<{ date: string, time?: string, barber_id?: number | null }>({
+    date: this.toISODate(new Date()),
+  });
 
   // Filtro por trabajador (solo UI)
   workerId = signal<string>(''); // '' = todos
@@ -112,7 +128,7 @@ export class TurnosComponent implements OnDestroy {
   private refreshTimer: any = null;
   readonly Number = Number;
 
-  // reloj UI (para “por terminar / por cobrar” sin depender solo del refresh)
+  // reloj UI
   nowMs = signal<number>(Date.now());
   private clockTimer: any = null;
 
@@ -154,13 +170,13 @@ export class TurnosComponent implements OnDestroy {
   // ✅ EDICIÓN
   // ============================
   editOpen = signal<boolean>(false);
-  eMode = signal<EditMode>('RESCHEDULE'); // RESCHEDULE = cambiar barbero/hora/servicios con disponibilidad
+  eMode = signal<EditMode>('RESCHEDULE');
   eTime = signal<string>('');             // HH:MM
   eDuration = signal<number>(0);          // minutos (solo MANUAL)
-  eBarberId = signal<string>('AUTO');     // AUTO o id (solo RESCHEDULE y si hay servicios barber)
+  eBarberId = signal<string>('AUTO');     // AUTO o id
   eServiceQuery = signal<string>('');
   eSelectedServiceIds = signal<number[]>([]);
-  eNote = signal<string>('');             // opcional, si el backend lo soporta
+  eNote = signal<string>('');
 
   // ============================
   // ✅ FILTRO BASE POR TRABAJADOR
@@ -171,7 +187,7 @@ export class TurnosComponent implements OnDestroy {
       if (Number(b.worker) === workerIdNum) return true;
     }
 
-    // fallback por label (por si el backend no manda worker id en el bloque)
+    // fallback por label
     const w = this.workers().find(x => x.id === workerIdNum);
     const label = (w?.label ?? '').trim().toLowerCase();
     if (label) {
@@ -233,7 +249,6 @@ export class TurnosComponent implements OnDestroy {
     return Array.from(map.entries()).map(([hour, items]) => ({ hour, items }));
   });
 
-  // Conteos por estado respetando el filtro de trabajador (pero NO el buscador)
   counts = computed(() => {
     const base = { ALL: 0, RESERVED: 0, ATTENDED: 0, CANCELLED: 0, NO_SHOW: 0 } as Record<
       StatusFilter,
@@ -247,7 +262,6 @@ export class TurnosComponent implements OnDestroy {
     return base;
   });
 
-  // KPIs respetando el filtro de trabajador (pero NO el buscador)
   kpis = computed(() => {
     const items = this.baseByWorker();
 
@@ -291,7 +305,7 @@ export class TurnosComponent implements OnDestroy {
   });
 
   // ============================
-  // ✅ Caja rápida (respeta filtro trabajador)
+  // ✅ Caja rápida
   // ============================
   attention = computed(() => {
     const items = this.baseByWorker();
@@ -438,14 +452,12 @@ export class TurnosComponent implements OnDestroy {
     return end || '—';
   });
 
-  // ============================
   // Workers
-  // ============================
   barberWorkers = computed(() => this.workers().filter(w => w.role === 'BARBER'));
 
   constructor() {
     this.loadCatalog();
-    this.refresh();
+    this.refresh(); // async, pero se puede llamar así
 
     this.clockTimer = setInterval(() => this.nowMs.set(Date.now()), 20_000);
 
@@ -474,6 +486,46 @@ export class TurnosComponent implements OnDestroy {
     const base = ((environment as any).API_URI).toString().trim().replace(/\/+$/, '');
     const p = path.startsWith('/') ? path : `/${path}`;
     return `${base}${p}`;
+  }
+
+  openItinerary() {
+    this.itOpen.set(true);
+  }
+
+  closeItinerary() {
+    this.itOpen.set(false);
+  }
+
+  onViewAppointmentFromItinerary(id: number) {
+    this.selectedId.set(id);
+    this.itOpen.set(false);
+  }
+
+  openReserve() {
+    this.reserveUi.open();
+  }
+
+  closeReserve() {
+    this.reserveUi.close?.();
+  }
+
+  // ✅ cuando el modal cree la reserva, refrescamos y seleccionamos
+  onReserveCreated(res: any) {
+    const createdId =
+      Number(res?.appointment_id) ||
+      Number(res?.id) ||
+      Number(res?.appointment?.id) ||
+      null;
+
+    this.reserveOpen.set(false);
+
+    if (createdId) {
+      this.toastMsg(`Turno creado #${createdId}`);
+      this.refresh(createdId);
+    } else {
+      this.toastMsg('Turno creado.');
+      this.refresh();
+    }
   }
 
   // -----------------------------
@@ -566,24 +618,57 @@ export class TurnosComponent implements OnDestroy {
   // -----------------------------
   private normalizeWorkers(res: any, role?: Group): Worker[] {
     const arr = Array.isArray(res) ? res : Array.isArray(res?.results) ? res.results : [];
+
     const roleText = (r?: Group) =>
       r === 'BARBER' ? 'Barber'
         : r === 'NAILS' ? 'Uñas'
           : r === 'FACIAL' ? 'Facial'
             : '';
 
-    return arr.map((x: any) => {
-      const id = Number(x.id);
-      const baseLabel =
-        x.label ??
-        x.display_name ??
-        x.name ??
-        x.full_name ??
-        x.fullName ??
-        x.username ??
-        `Worker ${id}`;
+    const pickLabel = (x: any, id: number): string => {
+      // 1) campos comunes directos
+      const direct =
+        x?.label ??
+        x?.display_name ??
+        x?.displayName ??
+        x?.full_name ??
+        x?.fullName ??
+        x?.name ??
+        x?.nombre ??
+        null;
 
-      const rawRole = (x.role ?? x.group ?? x.category ?? '').toString().toUpperCase();
+      if (direct && String(direct).trim()) return String(direct).trim();
+
+      // 2) si viene anidado en user/usuario/account
+      const u = x?.user ?? x?.usuario ?? x?.account ?? x?.auth_user ?? null;
+
+      const first =
+        u?.first_name ?? u?.firstName ?? u?.nombres ??
+        x?.first_name ?? x?.firstName ?? x?.nombres ?? '';
+
+      const last =
+        u?.last_name ?? u?.lastName ?? u?.apellidos ??
+        x?.last_name ?? x?.lastName ?? x?.apellidos ?? '';
+
+      const full = `${String(first ?? '').trim()} ${String(last ?? '').trim()}`.trim();
+      if (full) return full;
+
+      // 3) username como último recurso “real”
+      const username =
+        u?.username ?? u?.user_name ?? u?.email ??
+        x?.username ?? x?.user_name ?? x?.email ?? null;
+
+      if (username && String(username).trim()) return String(username).trim();
+
+      // 4) fallback final
+      return `Trabajador #${id}`;
+    };
+
+    return arr.map((x: any) => {
+      const id = Number(x?.id);
+      const baseLabel = pickLabel(x, id);
+
+      const rawRole = (x?.role ?? x?.group ?? x?.category ?? '').toString().toUpperCase();
       const inferred: Group | undefined =
         rawRole.includes('NAIL') || rawRole.includes('UÑ') || rawRole.includes('UNA') ? 'NAILS'
           : rawRole.includes('FAC') ? 'FACIAL'
@@ -594,8 +679,8 @@ export class TurnosComponent implements OnDestroy {
 
       return {
         id,
-        label: String(baseLabel),
-        labelFull: finalRole ? `${baseLabel} • ${roleText(finalRole)}` : String(baseLabel),
+        label: baseLabel,
+        labelFull: finalRole ? `${baseLabel} • ${roleText(finalRole)}` : baseLabel,
         role: finalRole,
       };
     });
@@ -680,32 +765,37 @@ export class TurnosComponent implements OnDestroy {
   }
 
   // -----------------------------
-  // Agenda staff
+  // Agenda staff (AHORA async para poder “refrescar y mantener selección”)
   // -----------------------------
-  refresh() {
+  async refresh(selectId?: number) {
     this.error.set('');
     this.loading.set(true);
 
     const requestUrl = this.api('/api/agenda/staff/');
-    let params = new HttpParams()
+    const params = new HttpParams()
       .set('date', this.date())
-      .set('_ts', String(Date.now())); // <- anti-cache
+      .set('_ts', String(Date.now())); // anti-cache
 
-    this.http.get<StaffAgendaResponse>(requestUrl, { params, withCredentials: true }).subscribe({
-      next: res => {
-        this.loading.set(false);
-        const items = Array.isArray(res?.results) ? res.results : [];
-        this.results.set(items);
+    try {
+      const res = await firstValueFrom(
+        this.http.get<StaffAgendaResponse>(requestUrl, { params, withCredentials: true })
+      );
 
-        const current = this.selectedId();
-        if (current && items.some(x => x.id === current)) return;
+      this.loading.set(false);
+
+      const items = Array.isArray(res?.results) ? res.results : [];
+      this.results.set(items);
+
+      const keepId = selectId ?? this.selectedId();
+      if (keepId && items.some(x => x.id === keepId)) {
+        this.selectedId.set(keepId);
+      } else {
         this.selectedId.set(items[0]?.id ?? null);
-      },
-      error: err => {
-        this.loading.set(false);
-        this.setHttpError(err, requestUrl);
-      },
-    });
+      }
+    } catch (err: any) {
+      this.loading.set(false);
+      this.setHttpError(err, requestUrl);
+    }
   }
 
   markAttend(ap: Appointment) {
@@ -799,7 +889,7 @@ export class TurnosComponent implements OnDestroy {
         this.busyId.set(null);
         this.payOpen.set(false);
         this.toastMsg('Pago registrado.');
-        this.refresh();
+        this.refresh(ap.id);
       },
       error: err => {
         this.busyId.set(null);
@@ -872,12 +962,12 @@ export class TurnosComponent implements OnDestroy {
     set.has(id) ? set.delete(id) : set.add(id);
     this.eSelectedServiceIds.set(Array.from(set));
 
-    // Si estás en MANUAL, refresca duración sugerida por servicios
+    // Si estás en MANUAL, puedes sincronizar duración si quieres
     if (this.eMode() === 'MANUAL') {
-      this.eDuration.set(this.eDurationByServices());
+      const suggested = this.eDurationByServices();
+      if (suggested > 0) this.eDuration.set(suggested);
     }
   }
-
 
   canCreate(): { ok: boolean; msg?: string } {
     const type = this.cCustomerType();
@@ -948,8 +1038,7 @@ export class TurnosComponent implements OnDestroy {
         Number(res?.appointment_id) || Number(res?.id) || Number(res?.appointment?.id) || null;
 
       this.toastMsg(createdId ? `Turno creado #${createdId}` : 'Turno creado.');
-      this.refresh();
-      if (createdId) this.selectedId.set(createdId);
+      await this.refresh(createdId ?? undefined);
 
       if (createdId && this.cMarkAttend()) {
         this.doAction(createdId, 'attend', () => this.patchStatus(createdId, 'ATTENDED'));
@@ -988,11 +1077,10 @@ export class TurnosComponent implements OnDestroy {
     this.selectedId.set(ap.id);
     this.error.set('');
 
-    // Si ya estás dentro del turno o faltan <= 30 min, RESCHEDULE normalmente falla por regla de negocio
+    // Si ya estás dentro del turno o faltan <= 30 min, RESCHEDULE normalmente falla
     const now = Date.now();
     const startMs = this.ms(ap.start_datetime);
     const limitMs = startMs - 30 * 60_000;
-
     this.eMode.set(now >= limitMs ? 'MANUAL' : 'RESCHEDULE');
 
     this.eTime.set(this.hhmmFromDatetime(ap.start_datetime));
@@ -1033,18 +1121,15 @@ export class TurnosComponent implements OnDestroy {
 
       // ==========================
       // ✅ MODO MANUAL (sin disponibilidad)
-
       if (mode === 'MANUAL') {
         const date = this.date();
         const time = (this.eTime() ?? '').trim();
         const duration = Number(this.eDuration() ?? 0);
-        // dentro de: if (mode === 'MANUAL') { ... }
 
         const barber_id =
           this.eHasBarberServices() && this.eBarberId() !== 'AUTO'
             ? Number(this.eBarberId())
             : null;
-
 
         if (!date || !time) throw new Error('Selecciona fecha y hora.');
         if (!Number.isFinite(duration) || duration <= 0) throw new Error('Duración inválida.');
@@ -1064,19 +1149,17 @@ export class TurnosComponent implements OnDestroy {
 
         await this.tryEndpoints([
           { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body },
-          // fallbacks por si tu backend usa PATCH/PUT:
           { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body },
         ]);
 
         this.editOpen.set(false);
-        this.refresh();
+        await this.refresh(ap.id);
         this.toastMsg('Turno actualizado (manual).');
         return;
       }
 
       // ==========================
       // ✅ MODO RESCHEDULE (con disponibilidad)
-      // ==========================
       const date = this.date();
       const time = (this.eTime() ?? '').trim();
       if (!date || !time) throw new Error('Selecciona fecha y hora.');
@@ -1086,19 +1169,15 @@ export class TurnosComponent implements OnDestroy {
 
       const body: any = {
         option_id,
-        reason: noteOrReason, // tu reschedule.py usa "reason" (opcional)
+        reason: noteOrReason,
       };
 
       await this.tryEndpoints([
         { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/reschedule/`), body },
-
-        // (Opcional) fallbacks legacy si tenías otras rutas antes:
-        // { method: 'POST', url: this.api(`/api/appointments/${ap.id}/reschedule/`), body },
-        // { method: 'POST', url: this.api(`/api/appointments/${ap.id}/change-option/`), body },
       ]);
 
       this.editOpen.set(false);
-      this.refresh();
+      await this.refresh(ap.id);
       this.toastMsg('Turno actualizado.');
     } catch (e: any) {
       this.error.set(
@@ -1107,7 +1186,7 @@ export class TurnosComponent implements OnDestroy {
         'No se pudo actualizar el turno.'
       );
     } finally {
-      this.busyId.set(null)
+      this.busyId.set(null);
       this.editing.set(false);
     }
   }
@@ -1120,19 +1199,6 @@ export class TurnosComponent implements OnDestroy {
       try { return JSON.stringify(e.error); } catch { /* ignore */ }
     }
     return '';
-  }
-
-  async loadAll(): Promise<void> {
-    const anyThis: any = this;
-
-    // Llama al método real que tú ya tengas para recargar datos
-    if (typeof anyThis.loadTurnos === 'function') return anyThis.loadTurnos();
-    if (typeof anyThis.loadAppointments === 'function') return anyThis.loadAppointments();
-    if (typeof anyThis.load === 'function') return anyThis.load();
-    if (typeof anyThis.getAppointments === 'function') return anyThis.getAppointments();
-
-    // Si no existe ninguno, no rompe el build
-    return;
   }
 
   private async tryEndpoints(attempts: Array<{ method: 'POST' | 'PATCH' | 'PUT'; url: string; body: any }>) {
@@ -1151,13 +1217,8 @@ export class TurnosComponent implements OnDestroy {
         lastErr = err;
         const status = err?.status ?? 0;
 
-        // no seguir intentando si es auth
         if (status === 401 || status === 403) throw err;
-
-        // en 404/405/400 puede ser que el endpoint/serializer no exista: probamos siguiente
         if ([400, 404, 405, 422].includes(status)) continue;
-
-        // otros errores: cortar
         throw err;
       }
     }
@@ -1168,6 +1229,7 @@ export class TurnosComponent implements OnDestroy {
   private extractServiceIds(ap: Appointment): number[] {
     const out = new Set<number>();
 
+    // mapeo por nombre (si el catálogo existe)
     const byName = new Map<string, number>();
     for (const s of this.services()) {
       const key = String(s.name ?? '').trim().toLowerCase();
@@ -1212,7 +1274,7 @@ export class TurnosComponent implements OnDestroy {
   }
 
   // -----------------------------
-  // Availability -> option_id (usado en crear y reprogramar)
+  // Availability -> option_id
   // -----------------------------
   private inferGroupFromCategoryName(catName: string): Group {
     const raw = (catName || '').toLowerCase();
@@ -1237,7 +1299,6 @@ export class TurnosComponent implements OnDestroy {
   }
 
   private findBarberWorkerIdFromBlocks(ap: Appointment, serviceIds: number[]): string {
-    // Si el turno tiene servicios BARBER, busca el bloque que tenga alguno de esos servicios
     const hasBarber = this.hasBarberServicesSelected(serviceIds);
     if (!hasBarber) return 'AUTO';
 
@@ -1251,7 +1312,6 @@ export class TurnosComponent implements OnDestroy {
       if (blockHasBarber && (b as any).worker) return String((b as any).worker);
     }
 
-    // fallback: primer bloque
     const b0: any = ap.blocks?.[0];
     return b0?.worker ? String(b0.worker) : 'AUTO';
   }
@@ -1290,11 +1350,18 @@ export class TurnosComponent implements OnDestroy {
 
     const picked = this.pickAvailabilityOptionByTime(list, date, time);
     if (!picked) {
+      // muestra algunas horas disponibles (ayuda a entender por qué “no cambia”)
+      const sample = list
+        .map((o: any) => this.hhmmFromOption(o, date))
+        .filter(Boolean)
+        .slice(0, 10)
+        .join(', ');
       throw {
         error: {
           detail:
             'La hora seleccionada no coincide con un slot disponible. ' +
-            'Cambia la hora o selecciona un turno dentro de los disponibles.',
+            (sample ? `Ejemplos disponibles: ${sample}` : '') +
+            ' Cambia la hora o selecciona un turno dentro de los disponibles.',
         },
       };
     }
@@ -1307,13 +1374,49 @@ export class TurnosComponent implements OnDestroy {
     return String(rawId);
   }
 
+  private hhmmFromOption(o: any, date: string): string {
+    const raw =
+      o?.appointment_start ??
+      o?.start_datetime ??
+      o?.start ??
+      o?.start_time ??
+      o?.begin ??
+      null;
+
+    if (!raw) return '';
+
+    // Si viene solo "HH:MM" o "HH:MM:SS"
+    if (typeof raw === 'string' && /^\d{2}:\d{2}(:\d{2})?$/.test(raw.trim())) {
+      const t = raw.trim().slice(0, 5);
+      return t;
+    }
+
+    const d = new Date(raw);
+    if (!Number.isFinite(d.getTime())) return '';
+
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+
   private pickAvailabilityOptionByTime(
     options: AvailabilityOption[],
     date: string,
     time: string
   ): AvailabilityOption | null {
-    const t = time.length === 5 ? `${time}:00` : time;
-    const desired = new Date(`${date}T${t}`);
+    const desiredHHMM = (time ?? '').trim().slice(0, 5);
+    if (!desiredHHMM) return null;
+
+    // 1) match directo por HH:MM en hora local
+    const exact = options.find((o: any) => this.hhmmFromOption(o, date) === desiredHHMM);
+    if (exact) return exact;
+
+    // 2) fallback: más cercano (<= 10 min)
+    const desired = new Date(`${date}T${desiredHHMM}:00`);
+    if (!Number.isFinite(desired.getTime())) return null;
+
+    let best: AvailabilityOption | null = null;
+    let bestDiff = Number.POSITIVE_INFINITY;
 
     const startOf = (o: any): Date | null => {
       const raw =
@@ -1326,7 +1429,6 @@ export class TurnosComponent implements OnDestroy {
 
       if (!raw) return null;
 
-      // Si viene solo "HH:MM" o "HH:MM:SS"
       if (typeof raw === 'string' && /^\d{2}:\d{2}(:\d{2})?$/.test(raw.trim())) {
         const tt = raw.trim().length === 5 ? `${raw.trim()}:00` : raw.trim();
         const d = new Date(`${date}T${tt}`);
@@ -1336,22 +1438,6 @@ export class TurnosComponent implements OnDestroy {
       const d = new Date(raw);
       return Number.isFinite(d.getTime()) ? d : null;
     };
-
-    const exact = options.find((o: any) => {
-      const d = startOf(o);
-      if (!d) return false;
-      return (
-        d.getFullYear() === desired.getFullYear() &&
-        d.getMonth() === desired.getMonth() &&
-        d.getDate() === desired.getDate() &&
-        d.getHours() === desired.getHours() &&
-        d.getMinutes() === desired.getMinutes()
-      );
-    });
-    if (exact) return exact;
-
-    let best: AvailabilityOption | null = null;
-    let bestDiff = Number.POSITIVE_INFINITY;
 
     for (const o of options as any[]) {
       const d = startOf(o);
@@ -1539,9 +1625,9 @@ export class TurnosComponent implements OnDestroy {
     return labels[0];
   }
 
-  // ============================
+  // -----------------------------
   // Tiempo (por cobrar / por terminar / en curso)
-  // ============================
+  // -----------------------------
   private ms(dt: string): number {
     const t = new Date(dt).getTime();
     return Number.isFinite(t) ? t : 0;
@@ -1711,7 +1797,7 @@ export class TurnosComponent implements OnDestroy {
     const mm = String(d.getMinutes()).padStart(2, '0');
     const ss = String(d.getSeconds()).padStart(2, '0');
 
-    const offMin = -d.getTimezoneOffset(); // ej Colombia: -300
+    const offMin = -d.getTimezoneOffset();
     const sign = offMin >= 0 ? '+' : '-';
     const abs = Math.abs(offMin);
     const oh = String(Math.floor(abs / 60)).padStart(2, '0');

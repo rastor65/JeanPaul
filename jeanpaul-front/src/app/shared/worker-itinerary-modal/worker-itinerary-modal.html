@@ -1,0 +1,81 @@
+<div
+  class="modal-backdrop"
+  *ngIf="visible"
+  (mousedown)="onBackdropMouseDown($event)"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Itinerario por trabajador"
+>
+  <div class="modal">
+    <header class="modal__header">
+      <div class="modal__title">Itinerario por trabajador</div>
+
+      <button class="icon-btn" type="button" (click)="doClose()" aria-label="Cerrar">
+        ×
+      </button>
+    </header>
+
+    <div class="modal__body">
+      <aside class="workers">
+        <div class="workers__title">Trabajadores</div>
+
+        <button
+          type="button"
+          class="worker-btn"
+          *ngFor="let w of workersList(); trackBy: trackWorker"
+          (click)="selectWorker(w.id)"
+          [class.is-active]="w.id === selectedWorkerId()"
+        >
+          {{ workerLabel(w) }}
+        </button>
+      </aside>
+
+      <section class="timeline" *ngIf="selectedWorker(); else emptyState">
+        <div class="timeline__header">
+          <div class="timeline__worker">
+            {{ workerLabel(selectedWorker()!) }}
+          </div>
+
+          <div class="legend">
+            <span class="legend__item">
+              <span class="dot dot--busy"></span> Ocupado
+            </span>
+            <span class="legend__item">
+              <span class="dot dot--free"></span> Libre
+            </span>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="row" *ngFor="let h of hours(); trackBy: trackHour">
+            <div class="hour">{{ formatHour(h) }}</div>
+
+            <div class="bar">
+              <div class="bar__half"></div>
+
+              <ng-container *ngFor="let seg of (segmentsByHour().get(h) ?? []); trackBy: trackSegment">
+                <button
+                  type="button"
+                  class="seg seg--busy"
+                  [style.left.%]="seg.leftPct"
+                  [style.width.%]="seg.widthPct"
+                  [attr.title]="seg.tooltip"
+                  (click)="onSegmentClick(seg.appointmentId)"
+                  aria-label="Ver turno"
+                ></button>
+              </ng-container>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <ng-template #emptyState>
+        <div class="empty">No hay trabajadores para mostrar.</div>
+      </ng-template>
+    </div>
+
+    <footer class="modal__footer">
+      <button class="btn" type="button" (click)="doClose()">Cerrar</button>
+    </footer>
+  </div>
+</div>

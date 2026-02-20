@@ -1,3 +1,4 @@
+<!-- turnos.html -->
 <section class="page">
   <!-- TOP BAR -->
   <header class="top">
@@ -30,15 +31,19 @@
         {{ autoRefresh() ? 'Auto ON' : 'Auto OFF' }}
       </button>
 
-      <button class="btn btn--ghost" type="button" (click)="exportCSV()">
-        Exportar CSV
+      <button type="button" class="btn btn--ghost" (click)="openItinerary()">
+        Itinerario por trabajador
       </button>
 
-      <button class="btn btn--primary" type="button" (click)="toggleCreate()">
-        {{ createOpen() ? 'Cerrar' : 'Nuevo turno' }}
-      </button>
+      <button type="button" class="btn btn--primary" (click)="openReserve()">Nuevo turno</button>
+
     </div>
   </header>
+
+  <app-worker-itinerary-modal [visible]="itOpen()" (visibleChange)="itOpen.set($event)" [date]="date()"
+    [workers]="workers()" [appointments]="results()" [initialWorkerId]="workerId() ? +workerId() : null"
+    (close)="itOpen.set(false)" (viewAppointment)="onViewAppointmentFromItinerary($event)">
+  </app-worker-itinerary-modal>
 
   <!-- KPIs -->
   <section class="kpi">
@@ -122,7 +127,7 @@
     <strong>Atención:</strong> {{ error() }}
   </div>
 
-  <!-- CREATE PANEL -->
+  <!-- CREATE PANEL 
   <section class="create" *ngIf="createOpen()">
     <div class="create__head">
       <div>
@@ -136,7 +141,6 @@
     </div>
 
     <div class="create__grid">
-      <!-- CUSTOMER -->
       <div class="box">
         <div class="box__title">Cliente</div>
 
@@ -167,7 +171,6 @@
         </label>
       </div>
 
-      <!-- APPOINTMENT -->
       <div class="box">
         <div class="box__title">Turno</div>
 
@@ -223,7 +226,6 @@
         </div>
       </div>
 
-      <!-- SERVICES -->
       <div class="box box--wide">
         <div class="box__title">Servicios</div>
 
@@ -253,6 +255,7 @@
       </div>
     </div>
   </section>
+  -->
 
   <!-- MAIN GRID -->
   <section class="grid">
@@ -676,9 +679,7 @@
           <label class="mfield" *ngIf="eHasBarberServices()">
             <span>Barbero</span>
             <select class="mselect" [value]="eBarberId()" (change)="eBarberId.set(($any($event.target)).value)">
-              <!-- AUTO solo tiene sentido cuando VALIDAS disponibilidad -->
               <option value="AUTO" *ngIf="eMode()==='RESCHEDULE'">Disponible más cercano (AUTO)</option>
-
               <option *ngFor="let w of barberWorkers()" [value]="w.id">{{ w.label }}</option>
             </select>
 
@@ -691,7 +692,6 @@
             <span>Barbero</span>
             <div class="readonly muted">No aplica (este turno no incluye servicios de barbería).</div>
           </div>
-          
         </div>
 
         <div class="divider"></div>
@@ -747,4 +747,8 @@
   <div class="toast" *ngIf="toast()">
     {{ toast() }}
   </div>
+
+  <app-reserve-modal [open]="(reserveOpen$ | async) ?? false" (closed)="closeReserve()">
+  </app-reserve-modal>
+
 </section>
