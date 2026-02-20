@@ -97,9 +97,7 @@
       <div class="field mini">
         <span class="field__icon" aria-hidden="true">TRB</span>
 
-        <select class="mini__input"
-                [value]="workerId()"
-                (change)="setWorkerId(($any($event.target)).value)">
+        <select class="mini__input" [value]="workerId()" (change)="setWorkerId(($any($event.target)).value)">
           <option value="">Todos los trabajadores</option>
           <option *ngFor="let w of barberWorkers()" [value]="w.id">{{ w.label }}</option>
         </select>
@@ -112,10 +110,8 @@
       <!-- BUSCADOR -->
       <div class="search">
         <span class="search__icon" aria-hidden="true">⌕</span>
-        <input class="search__input" type="search"
-               placeholder="Buscar por cliente, teléfono, servicio o trabajador…"
-               [value]="query()"
-               (input)="setQuery(($any($event.target)).value)" />
+        <input class="search__input" type="search" placeholder="Buscar por cliente, teléfono, servicio o trabajador…"
+          [value]="query()" (input)="setQuery(($any($event.target)).value)" />
         <button class="search__clear" type="button" *ngIf="query()" (click)="setQuery('')">×</button>
       </div>
     </div>
@@ -658,8 +654,7 @@
         <div class="egrid">
           <label class="mfield">
             <span>Hora inicio</span>
-            <input class="minput" type="time" [value]="eTime()"
-              (change)="eTime.set(($any($event.target)).value)" />
+            <input class="minput" type="time" [value]="eTime()" (change)="eTime.set(($any($event.target)).value)" />
           </label>
 
           <label class="mfield" *ngIf="eMode()==='MANUAL'">
@@ -678,19 +673,25 @@
             <div class="readonly">{{ eDurationByServices() }} min</div>
           </div>
 
-          <label class="mfield" *ngIf="eMode()==='RESCHEDULE' && eHasBarberServices()">
+          <label class="mfield" *ngIf="eHasBarberServices()">
             <span>Barbero</span>
-            <select class="mselect" [value]="eBarberId()"
-              (change)="eBarberId.set(($any($event.target)).value)">
-              <option value="AUTO">Disponible más cercano (AUTO)</option>
+            <select class="mselect" [value]="eBarberId()" (change)="eBarberId.set(($any($event.target)).value)">
+              <!-- AUTO solo tiene sentido cuando VALIDAS disponibilidad -->
+              <option value="AUTO" *ngIf="eMode()==='RESCHEDULE'">Disponible más cercano (AUTO)</option>
+
               <option *ngFor="let w of barberWorkers()" [value]="w.id">{{ w.label }}</option>
             </select>
+
+            <div class="muted" style="font-size:12px" *ngIf="eMode()==='MANUAL'">
+              En ajuste manual no se valida disponibilidad. Úsalo solo si es necesario.
+            </div>
           </label>
 
-          <div class="mfield" *ngIf="eMode()==='RESCHEDULE' && !eHasBarberServices()">
+          <div class="mfield" *ngIf="!eHasBarberServices()">
             <span>Barbero</span>
             <div class="readonly muted">No aplica (este turno no incluye servicios de barbería).</div>
           </div>
+          
         </div>
 
         <div class="divider"></div>

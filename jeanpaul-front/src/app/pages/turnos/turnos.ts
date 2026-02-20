@@ -687,9 +687,10 @@ export class TurnosComponent implements OnDestroy {
     this.loading.set(true);
 
     const requestUrl = this.api('/api/agenda/staff/');
-    let params = new HttpParams().set('date', this.date());
+    let params = new HttpParams()
+      .set('date', this.date())
+      .set('_ts', String(Date.now())); // <- anti-cache
 
-    // Importante: solo date al backend. Los filtros (status/query/worker) son 100% UI.
     this.http.get<StaffAgendaResponse>(requestUrl, { params, withCredentials: true }).subscribe({
       next: res => {
         this.loading.set(false);
@@ -1017,6 +1018,7 @@ export class TurnosComponent implements OnDestroy {
   async saveEdit(ap: Appointment) {
     if (this.editing()) return;
     this.editing.set(true);
+    this.busyId.set(ap.id);
     this.error.set('');
 
     try {
@@ -1031,23 +1033,39 @@ export class TurnosComponent implements OnDestroy {
 
       // ==========================
       // ✅ MODO MANUAL (sin disponibilidad)
-      // ==========================
+
       if (mode === 'MANUAL') {
+        const date = this.date();
+        const time = (this.eTime() ?? '').trim();
+        const duration = Number(this.eDuration() ?? 0);
+        // dentro de: if (mode === 'MANUAL') { ... }
+
+        const barber_id =
+          this.eHasBarberServices() && this.eBarberId() !== 'AUTO'
+            ? Number(this.eBarberId())
+            : null;
+
+
+        if (!date || !time) throw new Error('Selecciona fecha y hora.');
+        if (!Number.isFinite(duration) || duration <= 0) throw new Error('Duración inválida.');
+
+        const start_datetime = this.buildIsoWithOffset(date, time);
+        const end_datetime = this.buildIsoWithOffsetFromStart(date, time, duration);
+
         const body: any = {
           service_ids,
-          duration_minutes: this.eDurationByServices(),
+          duration_minutes: duration,
+          start_datetime,
+          end_datetime,
+          barber_id,
+          force: true,
           note: noteOrReason,
         };
 
         await this.tryEndpoints([
-          {
-            method: 'POST',
-            url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`),
-            body,
-          },
-
-          // (Opcional) fallback por si aún tienes otra ruta legacy:
-          // { method: 'POST', url: this.api(`/api/appointments/${ap.id}/inline-edit/`), body },
+          { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body },
+          // fallbacks por si tu backend usa PATCH/PUT:
+          { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body },
         ]);
 
         this.editOpen.set(false);
@@ -1089,6 +1107,7 @@ export class TurnosComponent implements OnDestroy {
         'No se pudo actualizar el turno.'
       );
     } finally {
+      this.busyId.set(null)
       this.editing.set(false);
     }
   }
