@@ -112,6 +112,152 @@ def _validate_choice(field, value: Any) -> bool:
     allowed = {c[0] for c in field.choices}
     return value in allowed
 
+from typing import Optional, List, Tuple
+
+def _find_service_m2m_field(block) -> Optional[Tuple[str, object]]:
+    """
+    Busca un ManyToManyField en AppointmentBlock que apunte a un modelo tipo Service.
+    Retorna (field_name, ServiceModel) o None.
+    """
+    for f in block._meta.many_to_many:
+        try:
+            remote = f.remote_field.model
+            name = (remote.__name__ or "").lower()
+            if "service" in name or "servicio" in name or f.name in ("services", "servicios"):
+                return f.name, remote
+        except Exception:
+            continue
+
+    # fallback por nombre del field
+    for f in block._meta.many_to_many:
+        if "service" in f.name.lower() or "servicio" in f.name.lower():
+            try:
+                return f.name, f.remote_field.model
+            except Exception:
+                continue
+
+    return None
+
+
+def _find_service_through_relation(block) -> Optional[Tuple[str, object, str]]:
+    """
+    Busca una relación reverse (one-to-many) tipo ThroughModel que tenga:
+    - FK al block
+    - FK a un modelo tipo Service
+    Retorna (accessor_name, ThroughModel, service_fk_field_name) o None.
+    """
+    for rel in block._meta.related_objects:
+        if not getattr(rel, "one_to_many", False):
+            continue
+
+        Through = rel.related_model
+        fields = list(Through._meta.fields)
+
+        # el FK al block ya lo tenemos en rel.field
+        block_fk_name = rel.field.name
+
+        # buscamos otro FK en Through que apunte a Service
+        service_fk_name = None
+        ServiceModel = None
+
+        for f in fields:
+            if not getattr(f, "many_to_one", False):
+                continue
+            if f.name == block_fk_name:
+                continue
+
+            try:
+                remote = f.remote_field.model
+                remote_name = (remote.__name__ or "").lower()
+                if "service" in remote_name or "servicio" in remote_name or "service" in f.name.lower():
+                    service_fk_name = f.name
+                    ServiceModel = remote
+                    break
+            except Exception:
+                continue
+
+        if service_fk_name and ServiceModel:
+            accessor = rel.get_accessor_name()  # ej: appointmentblockservice_set
+            return accessor, Through, service_fk_name
+
+    return None
+
+def _apply_services_to_block(block, service_ids: List[int]) -> None:
+    """
+    Actualiza los servicios del AppointmentBlock sin asumir el nombre del campo.
+    Soporta:
+    - M2M directo en el block (field tipo services)
+    - relación through reverse (ej: appointmentblockservice_set)
+    - campo service_ids (Array/JSON) si existe
+    """
+    ids = [int(x) for x in (service_ids or [])]
+
+    # 1) Si el bloque tiene M2M directo
+    m2m = _find_service_m2m_field(block)
+    if m2m:
+        field_name, ServiceModel = m2m
+        manager = getattr(block, field_name, None)
+
+        # solo si es manager real con .set()
+        if manager is not None and hasattr(manager, "set"):
+            qs = list(ServiceModel.objects.filter(id__in=ids))
+            if len(qs) != len(ids):
+                raise ValueError("Uno o más service_ids no existen.")
+            manager.set(qs)
+            return
+
+    # 2) Si el bloque guarda ids en un campo tipo Array/JSON
+    if hasattr(block, "service_ids"):
+        try:
+            setattr(block, "service_ids", ids)
+            block.save(update_fields=["service_ids"])
+            return
+        except Exception:
+            pass
+
+    # 3) Si usa modelo intermedio (reverse relation)
+    thr = _find_service_through_relation(block)
+    if thr:
+        accessor, Through, service_fk_name = thr
+
+        # validar ids existen usando el modelo remoto del FK
+        ServiceModel = Through._meta.get_field(service_fk_name).remote_field.model
+        qs = list(ServiceModel.objects.filter(id__in=ids))
+        if len(qs) != len(ids):
+            raise ValueError("Uno o más service_ids no existen.")
+
+        mgr = getattr(block, accessor)
+
+        # borramos existentes y recreamos
+        mgr.all().delete()
+
+        # nombre del FK al block dentro del Through
+        block_fk_name = Through._meta.get_fields()[0].name  # NO usar esto
+        # mejor: detectar FK al block por el field que apunta a block.__class__
+        block_fk_name = None
+        for f in Through._meta.fields:
+            if getattr(f, "many_to_one", False):
+                try:
+                    if f.remote_field.model == block.__class__:
+                        block_fk_name = f.name
+                        break
+                except Exception:
+                    continue
+
+        if not block_fk_name:
+            # fallback: intenta "block"
+            block_fk_name = "block"
+
+        rows = [
+            Through(**{f"{block_fk_name}_id": block.id, f"{service_fk_name}_id": sid})
+            for sid in ids
+        ]
+        Through.objects.bulk_create(rows)
+        return
+
+    # si no encontramos nada, no rompe, pero no hay dónde guardar
+    raise ValueError("No se encontró relación de servicios en AppointmentBlock.")
+
 
 # -------------------------
 # API View
@@ -346,11 +492,13 @@ class AppointmentInlineEditAPIView(APIView):
                         dirty.add("barber")
 
                 # sync services en el bloque (si existe)
-                if services_for_set is not None and hasattr(b, "services"):
+                if service_ids is not None:
                     try:
-                        b.services.set(services_for_set)
+                        _apply_services_to_block(b, ids_int)
+                    except ValueError as ve:
+                        return Response({"detail": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
                     except Exception:
-                        # no tumbamos el endpoint si hay restricciones raras
+                        # si hay restricciones raras no tumbamos todo
                         pass
 
                 if dirty:
