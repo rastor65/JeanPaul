@@ -248,11 +248,15 @@ def _apply_services_to_block(block, service_ids: List[int]) -> None:
             # fallback: intenta "block"
             block_fk_name = "block"
 
+        def _id_key(name: str) -> str:
+            return name if name.endswith("_id") else f"{name}_id"
+
         rows = [
-            Through(**{f"{block_fk_name}_id": block.id, f"{service_fk_name}_id": sid})
+            Through(**{_id_key(block_fk_name): block.id, _id_key(service_fk_name): sid})
             for sid in ids
         ]
         Through.objects.bulk_create(rows)
+        
         return
 
     # si no encontramos nada, no rompe, pero no hay dónde guardar
@@ -306,6 +310,18 @@ class AppointmentInlineEditAPIView(APIView):
 
         duration = data.get("duration_minutes", None)
         service_ids = data.get("service_ids", None)
+
+        ids_int = None
+        if service_ids is not None:
+            try:
+                # acepta lista o tuplas; si llega string raro cae al except
+                ids_int = [int(x) for x in (service_ids or [])]
+            except Exception:
+                return Response(
+                    {"detail": "service_ids debe ser una lista de enteros."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
 
         # Permite que te manden start/end con cualquiera de los dos nombres
         start_in = data.get(appt_start_field, data.get("start_datetime", data.get("start")))
@@ -505,6 +521,18 @@ class AppointmentInlineEditAPIView(APIView):
                     # update_fields debe llevar NOMBRES DE CAMPOS del modelo (no *_id)
                     # Para FK agregamos "worker"/"barber" arriba.
                     b.save(update_fields=sorted(dirty))
+
+                if ids_int is not None:
+                    try:
+                        _apply_services_to_block(b, ids_int)
+                    except ValueError as ve:
+                        # errores “esperados” -> 400 (para que el frontend muestre el detalle)
+                        return Response({"detail": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
+                    except Exception:
+                        # no tumbamos todo, pero esto puede ocultar el error.
+                        # si quieres depurar, cambia a "raise"
+                        raise
+
 
             # ---------
             # M2M services a nivel Appointment (opcional)
