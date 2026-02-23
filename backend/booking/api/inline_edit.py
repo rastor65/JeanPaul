@@ -231,8 +231,6 @@ def _apply_services_to_block(block, service_ids: List[int]) -> None:
         # borramos existentes y recreamos
         mgr.all().delete()
 
-        # nombre del FK al block dentro del Through
-        block_fk_name = Through._meta.get_fields()[0].name  # NO usar esto
         # mejor: detectar FK al block por el field que apunta a block.__class__
         block_fk_name = None
         for f in Through._meta.fields:
@@ -256,7 +254,7 @@ def _apply_services_to_block(block, service_ids: List[int]) -> None:
             for sid in ids
         ]
         Through.objects.bulk_create(rows)
-        
+
         return
 
     # si no encontramos nada, no rompe, pero no hay dónde guardar
@@ -453,6 +451,59 @@ class AppointmentInlineEditAPIView(APIView):
 
             # worker incoming: soporta worker_id o barber_id (frontend)
             incoming_worker_id = data.get("worker_id", None)
+            if incoming_worker_id in (None, ""):
+                incoming_worker_id = data.get("barber_id", None)
+
+            worker_id_int: Optional[int] = None
+            if incoming_worker_id not in (None, "", "AUTO"):
+                try:
+                    worker_id_int = int(incoming_worker_id)
+                except Exception:
+                    return Response({"detail": "worker_id/barber_id debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # services ids (UNA sola vez)
+            ids_int: Optional[List[int]] = None
+            if "service_ids" in data:
+                try:
+                    ids_int = [int(x) for x in (data.get("service_ids") or [])]
+                except Exception:
+                    return Response({"detail": "service_ids debe ser una lista de enteros."}, status=status.HTTP_400_BAD_REQUEST)
+
+            for b in blocks:
+                dirty = set()
+
+                # sync tiempo
+                setattr(b, block_start_field, new_start_dt)
+                setattr(b, block_end_field, new_end_dt)
+                dirty.update([block_start_field, block_end_field])
+
+                # sync worker (si el bloque lo soporta)
+                if worker_id_int is not None:
+                    if hasattr(b, "worker_id"):        # FK "worker"
+                        setattr(b, "worker_id", worker_id_int)
+                        dirty.add("worker")
+                    elif hasattr(b, "barber_id"):      # FK "barber"
+                        setattr(b, "barber_id", worker_id_int)
+                        dirty.add("barber")
+
+                if dirty:
+                    b.save(update_fields=sorted(dirty))
+
+                # sync services: UNA sola llamada y con error controlado (sin 500)
+                if ids_int is not None:
+                    try:
+                        _apply_services_to_block(b, ids_int)
+                    except ValueError as ve:
+                        return Response({"detail": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
+                    except Exception as ex:
+                        # si aquí falla, queremos ver el motivo en la respuesta (para depurar)
+                        return Response(
+                            {"detail": f"Error actualizando servicios del bloque: {type(ex).__name__}: {str(ex)}"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+            # worker incoming: soporta worker_id o barber_id (frontend)
+            incoming_worker_id = data.get("worker_id", None)
             if incoming_worker_id is None or incoming_worker_id == "":
                 incoming_worker_id = data.get("barber_id", None)
 
@@ -521,18 +572,6 @@ class AppointmentInlineEditAPIView(APIView):
                     # update_fields debe llevar NOMBRES DE CAMPOS del modelo (no *_id)
                     # Para FK agregamos "worker"/"barber" arriba.
                     b.save(update_fields=sorted(dirty))
-
-                if ids_int is not None:
-                    try:
-                        _apply_services_to_block(b, ids_int)
-                    except ValueError as ve:
-                        # errores “esperados” -> 400 (para que el frontend muestre el detalle)
-                        return Response({"detail": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
-                    except Exception:
-                        # no tumbamos todo, pero esto puede ocultar el error.
-                        # si quieres depurar, cambia a "raise"
-                        raise
-
 
             # ---------
             # M2M services a nivel Appointment (opcional)
