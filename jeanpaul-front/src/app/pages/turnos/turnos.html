@@ -626,7 +626,7 @@
     </div>
   </div>
 
-  <!-- EDIT MODAL -->
+  <!-- EDIT MODAL (UNIFICADO - SIN DISPONIBILIDAD) -->
   <div class="overlay" *ngIf="editOpen()">
     <div class="modal modal--wide">
       <div class="modal__head">
@@ -638,20 +638,8 @@
       </div>
 
       <div class="modal__body" *ngIf="selected() as ap">
-        <div class="emode">
-          <button class="ebtn" type="button" [class.on]="eMode()==='RESCHEDULE'" (click)="eMode.set('RESCHEDULE')">
-            Reprogramar
-          </button>
-          <button class="ebtn" type="button" [class.on]="eMode()==='MANUAL'" (click)="eMode.set('MANUAL')">
-            Ajuste manual
-          </button>
-        </div>
-
-        <div class="ehelp" *ngIf="eMode()==='RESCHEDULE'">
-          Reprogramar recalcula disponibilidad según servicios y barbero. Útil para cambiar barbero, hora o servicios.
-        </div>
-        <div class="ehelp" *ngIf="eMode()==='MANUAL'">
-          Ajuste manual permite extender/reducir duración sin validar disponibilidad (eventualidades).
+        <div class="ehelp">
+          Aquí puedes cambiar hora, duración, servicios y trabajador. No se valida disponibilidad.
         </div>
 
         <div class="egrid">
@@ -660,38 +648,43 @@
             <input class="minput" type="time" [value]="eTime()" (change)="eTime.set(($any($event.target)).value)" />
           </label>
 
-          <label class="mfield" *ngIf="eMode()==='MANUAL'">
+          <label class="mfield">
             <span>Duración (min)</span>
             <input class="minput" type="number" min="5" step="5" [value]="eDuration()"
-              (input)="eDuration.set(Number(($any($event.target)).value))" />
+              (input)="onEDurationInput(($any($event.target)).value)" />
+            <small class="hint muted" style="font-size:12px">
+              Sugerida por servicios: {{ eDurationByServices() }} min
+              <button type="button" class="miniBtn" style="margin-left:8px" (click)="useSuggestedDuration()">
+                Usar sugerida
+              </button>
+            </small>
           </label>
 
-          <div class="mfield" *ngIf="eMode()==='MANUAL'">
+          <div class="mfield">
             <span>Hora fin</span>
             <div class="readonly">{{ eEndTime() }}</div>
           </div>
 
-          <div class="mfield" *ngIf="eMode()==='RESCHEDULE'">
-            <span>Duración por servicios</span>
-            <div class="readonly">{{ eDurationByServices() }} min</div>
-          </div>
-
+          <!-- Si hay barbería -> seleccionar barbero -->
           <label class="mfield" *ngIf="eHasBarberServices()">
             <span>Barbero</span>
             <select class="mselect" [value]="eBarberId()" (change)="eBarberId.set(($any($event.target)).value)">
-              <option value="AUTO" *ngIf="eMode()==='RESCHEDULE'">Disponible más cercano (AUTO)</option>
+              <option value="AUTO">AUTO (backend decide)</option>
               <option *ngFor="let w of barberWorkers()" [value]="w.id">{{ w.label }}</option>
             </select>
-
-            <div class="muted" style="font-size:12px" *ngIf="eMode()==='MANUAL'">
-              En ajuste manual no se valida disponibilidad. Úsalo solo si es necesario.
-            </div>
           </label>
 
-          <div class="mfield" *ngIf="!eHasBarberServices()">
-            <span>Barbero</span>
-            <div class="readonly muted">No aplica (este turno no incluye servicios de barbería).</div>
-          </div>
+          <!-- Si NO hay barbería -> permitir escoger worker (si tu backend lo soporta) -->
+          <label class="mfield" *ngIf="!eHasBarberServices()">
+            <span>Trabajador</span>
+            <select class="mselect" [value]="eWorkerId()" (change)="eWorkerId.set(($any($event.target)).value)">
+              <option value="AUTO">AUTO</option>
+              <option *ngFor="let w of workers()" [value]="w.id">{{ w.labelFull || w.label }}</option>
+            </select>
+            <small class="hint muted" style="font-size:12px">
+              Para uñas/facial puede que el backend ignore este cambio si el trabajador es fijo.
+            </small>
+          </label>
         </div>
 
         <div class="divider"></div>
@@ -699,7 +692,7 @@
         <div class="svcPickWrap">
           <div class="svcPickHead">
             <strong>Servicios</strong>
-            <span class="muted">Ajusta servicios para recalcular duración y reprogramar.</span>
+            <span class="muted">Selecciona los servicios que debe tener este turno.</span>
           </div>
 
           <div class="svcSearch">
@@ -722,14 +715,14 @@
           <ng-template #noServicesEdit>
             <div class="emptyBox">
               <strong>No hay servicios cargados</strong>
-              <span class="muted">No se puede reprogramar sin catálogo de servicios.</span>
+              <span class="muted">No se puede editar servicios sin catálogo.</span>
             </div>
           </ng-template>
         </div>
 
         <label class="mfield">
-          <span>Motivo / nota (opcional)</span>
-          <input class="minput" type="text" placeholder="Ej: se extendió 10 min por eventualidad" [value]="eNote()"
+          <span>Nota (opcional)</span>
+          <input class="minput" type="text" placeholder="Ej: se ajustó por eventualidad" [value]="eNote()"
             (input)="eNote.set(($any($event.target)).value)" />
         </label>
 

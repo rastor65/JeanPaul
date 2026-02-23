@@ -9,6 +9,8 @@ import { catchError, map } from 'rxjs/operators';
 import { WorkerItineraryModalComponent } from '../../shared/worker-itinerary-modal/worker-itinerary-modal';
 import { ReserveModalComponent } from '../../shared/reserve-modal/reserve-modal';
 import { ReserveUiService } from '../../shared/reserve-ui.service';
+import { time } from 'node:console';
+import { __values } from 'tslib';
 
 type StatusFilter = 'ALL' | 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
 type Status = 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
@@ -177,6 +179,13 @@ export class TurnosComponent implements OnDestroy {
   eServiceQuery = signal<string>('');
   eSelectedServiceIds = signal<number[]>([]);
   eNote = signal<string>('');
+
+  // ✅ EDICIÓN UNIFICADA (sin disponibilidad)
+  eDurationTouched = signal<boolean>(false);   // si el usuario cambia duración manualmente, no auto-recalcular
+  eWorkerId = signal<string>('AUTO');          // para turnos SIN barbería (si quieres forzar worker)
+  eOrigServiceIds = signal<number[]>([]);
+  eOrigBarberId = signal<string>('AUTO');
+  eOrigTime = signal<string>('');
 
   // ============================
   // ✅ FILTRO BASE POR TRABAJADOR
@@ -469,6 +478,18 @@ export class TurnosComponent implements OnDestroy {
       if (current && list.some(x => x.id === current)) return;
       this.selectedId.set(list[0]?.id ?? null);
     });
+
+    effect(() => {
+      if (!this.editOpen()) return;
+
+      const suggested = this.eDurationByServices();
+      if (this.eDurationTouched()) return;
+
+      if (Number.isFinite(suggested) && suggested > 0) {
+        this.eDuration.set(suggested);
+      }
+    });
+
   }
 
   ngOnDestroy(): void {
@@ -969,6 +990,18 @@ export class TurnosComponent implements OnDestroy {
     }
   }
 
+  onEDurationInput(value: any) {
+    const n = Number(value);
+    this.eDurationTouched.set(true);
+    this.eDuration.set(Number.isFinite(n) ? n : 0);
+  }
+
+  useSuggestedDuration() {
+    this.eDurationTouched.set(false);
+    const sugg = this.eDurationByServices();
+    if (Number.isFinite(sugg) && sugg > 0) this.eDuration.set(sugg);
+  }
+
   canCreate(): { ok: boolean; msg?: string } {
     const type = this.cCustomerType();
     const name = this.cName().trim();
@@ -1066,6 +1099,7 @@ export class TurnosComponent implements OnDestroy {
   // -----------------------------
   // ✅ EDITAR turno (modal)
   // -----------------------------
+
   openEdit(ap: Appointment) {
     if (!ap) return;
 
@@ -1077,22 +1111,27 @@ export class TurnosComponent implements OnDestroy {
     this.selectedId.set(ap.id);
     this.error.set('');
 
-    // Si ya estás dentro del turno o faltan <= 30 min, RESCHEDULE normalmente falla
-    const now = Date.now();
-    const startMs = this.ms(ap.start_datetime);
-    const limitMs = startMs - 30 * 60_000;
-    this.eMode.set(now >= limitMs ? 'MANUAL' : 'RESCHEDULE');
-
-    this.eTime.set(this.hhmmFromDatetime(ap.start_datetime));
-
-    const dur = this.durationMins(ap.start_datetime, ap.end_datetime);
-    this.eDuration.set(dur || 0);
+    const time0 = this.hhmmFromDatetime(ap.start_datetime);
+    this.eOrigTime.set(time0);
+    this.eTime.set(time0);
 
     const svcIds = this.extractServiceIds(ap);
+    this.eOrigServiceIds.set(svcIds);
     this.eSelectedServiceIds.set(svcIds);
 
     const barberId = this.findBarberWorkerIdFromBlocks(ap, svcIds);
+    this.eOrigBarberId.set(barberId || 'AUTO');
     this.eBarberId.set(barberId || 'AUTO');
+
+    // si el turno NO es de barbería, dejamos un worker “por si quieres forzar”
+    const firstWorker = ap.blocks?.[0]?.worker;
+    this.eWorkerId.set(firstWorker ? String(firstWorker) : 'AUTO');
+
+    // duración: si hay catálogo, sugerida; si no, la actual del turno
+    const suggested = this.eDurationByServices();
+    const current = this.durationMins(ap.start_datetime, ap.end_datetime);
+    this.eDurationTouched.set(false);
+    this.eDuration.set(suggested > 0 ? suggested : (current || 0));
 
     this.eServiceQuery.set('');
     this.eNote.set('');
@@ -1103,77 +1142,102 @@ export class TurnosComponent implements OnDestroy {
     this.editOpen.set(false);
   }
 
+  private sameIdSet(a: number[], b: number[]): boolean {
+    const A = new Set((a ?? []).map(Number).filter(Boolean));
+    const B = new Set((b ?? []).map(Number).filter(Boolean));
+    if (A.size !== B.size) return false;
+    for (const x of A) if (!B.has(x)) return false;
+    return true;
+  }
+
+  private didChangeServices(): boolean {
+    return !this.sameIdSet(this.eOrigServiceIds(), this.eSelectedServiceIds());
+  }
+
+  private didChangeBarber(): boolean {
+    // solo importa si hay servicios de barbería
+    if (!this.hasBarberServicesSelected(this.eSelectedServiceIds())) return false;
+    return String(this.eOrigBarberId() || 'AUTO') !== String(this.eBarberId() || 'AUTO');
+  }
+
   async saveEdit(ap: Appointment) {
     if (this.editing()) return;
+
     this.editing.set(true);
     this.busyId.set(ap.id);
     this.error.set('');
 
     try {
-      const mode = this.eMode();
-      const noteOrReason = (this.eNote() ?? '').trim() || null;
+      const note = (this.eNote() ?? '').trim() || null;
 
-      const service_ids = (this.eSelectedServiceIds() ?? [])
-        .map(Number)
-        .filter(Boolean);
+      // service_ids (limpia ids inválidos si hay catálogo)
+      const known = new Set((this.services() ?? []).map(s => Number(s.id)));
+      const rawIds = (this.eSelectedServiceIds() ?? []).map(Number).filter(Boolean);
+      const service_ids = rawIds.filter(id => (known.size ? known.has(id) : true));
 
       if (!service_ids.length) throw new Error('Selecciona al menos un servicio.');
 
-      // ==========================
-      // ✅ MODO MANUAL (sin disponibilidad)
-      if (mode === 'MANUAL') {
-        const date = this.date();
-        const time = (this.eTime() ?? '').trim();
-        const duration = Number(this.eDuration() ?? 0);
-
-        const barber_id =
-          this.eHasBarberServices() && this.eBarberId() !== 'AUTO'
-            ? Number(this.eBarberId())
-            : null;
-
-        if (!date || !time) throw new Error('Selecciona fecha y hora.');
-        if (!Number.isFinite(duration) || duration <= 0) throw new Error('Duración inválida.');
-
-        const start_datetime = this.buildIsoWithOffset(date, time);
-        const end_datetime = this.buildIsoWithOffsetFromStart(date, time, duration);
-
-        const body: any = {
-          service_ids,
-          duration_minutes: duration,
-          start_datetime,
-          end_datetime,
-          barber_id,
-          force: true,
-          note: noteOrReason,
-        };
-
-        await this.tryEndpoints([
-          { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body },
-          { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body },
-        ]);
-
-        this.editOpen.set(false);
-        await this.refresh(ap.id);
-        this.toastMsg('Turno actualizado (manual).');
-        return;
-      }
-
-      // ==========================
-      // ✅ MODO RESCHEDULE (con disponibilidad)
       const date = this.date();
       const time = (this.eTime() ?? '').trim();
       if (!date || !time) throw new Error('Selecciona fecha y hora.');
 
-      const barberId = this.eHasBarberServices() ? (this.eBarberId() || 'AUTO') : 'AUTO';
-      const option_id = await this.resolveOptionIdFromAvailability(date, time, service_ids, barberId);
+      // duración: si está en 0, usamos sugerida o la actual
+      let duration = Number(this.eDuration() ?? 0);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        const sugg = this.eDurationByServices();
+        duration = sugg > 0 ? sugg : this.durationMins(ap.start_datetime, ap.end_datetime);
+      }
+      if (!Number.isFinite(duration) || duration <= 0) throw new Error('Duración inválida.');
 
-      const body: any = {
-        option_id,
-        reason: noteOrReason,
+      const start_datetime = this.buildIsoWithOffset(date, time);
+      const end_datetime = this.buildIsoWithOffsetFromStart(date, time, duration);
+
+      const hasBarber = this.hasBarberServicesSelected(service_ids);
+      const barber_id =
+        hasBarber && this.eBarberId() !== 'AUTO'
+          ? Number(this.eBarberId())
+          : null;
+
+      // worker_id (solo intentamos si NO hay barbería, o si tu backend lo soporta)
+      const worker_id =
+        !hasBarber && this.eWorkerId() !== 'AUTO'
+          ? Number(this.eWorkerId())
+          : null;
+
+      // Cuerpo principal
+      const bodyA: any = {
+        start_datetime,
+        end_datetime,
+        duration_minutes: duration,
+        service_ids,
+        barber_id,
+        note,
+        force: true,
+      };
+
+      // Variantes por si el backend usa otros nombres
+      const bodyB: any = {
+        ...bodyA,
+        worker_id,              // algunos backends
+        worker: worker_id,      // otros
+        services: service_ids,  // otros
       };
 
       await this.tryEndpoints([
-        { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/reschedule/`), body },
+        // ✅ el más probable
+        { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyA },
+        { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyA },
+
+        // ✅ por si inline-edit no aplica servicios/worker
+        { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyB },
+
+        // ✅ por si el update directo está habilitado
+        { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/`), body: bodyA },
+        { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/`), body: bodyB },
+
+        // ✅ fallback (por si está sin /staff)
+        { method: 'PATCH', url: this.api(`/api/appointments/${ap.id}/`), body: bodyA },
+        { method: 'PATCH', url: this.api(`/api/appointments/${ap.id}/`), body: bodyB },
       ]);
 
       this.editOpen.set(false);
@@ -1229,28 +1293,28 @@ export class TurnosComponent implements OnDestroy {
   private extractServiceIds(ap: Appointment): number[] {
     const out = new Set<number>();
 
-    // mapeo por nombre (si el catálogo existe)
+    const catalog = this.services() ?? [];
+    const byId = new Set<number>(catalog.map(s => Number(s.id)));
     const byName = new Map<string, number>();
-    for (const s of this.services()) {
+    for (const s of catalog) {
       const key = String(s.name ?? '').trim().toLowerCase();
-      if (key) byName.set(key, s.id);
+      if (key) byName.set(key, Number(s.id));
     }
 
-    const pickId = (raw: any): number | null => {
-      const id =
-        raw?.id ??
+    const resolveId = (raw: any): number | null => {
+      const cand =
         raw?.service_id ??
         raw?.serviceId ??
         raw?.service?.id ??
         raw?.service?.pk ??
+        raw?.id ??
         raw?.pk ??
         null;
 
-      const n = Number(id);
-      return Number.isFinite(n) && n > 0 ? n : null;
-    };
+      const n = Number(cand);
+      // Solo aceptar si existe en catálogo (evita ids de relaciones)
+      if (Number.isFinite(n) && (byId.size ? byId.has(n) : true)) return n;
 
-    const pickName = (raw: any): number | null => {
       const name =
         raw?.name ??
         raw?.service_name ??
@@ -1258,14 +1322,14 @@ export class TurnosComponent implements OnDestroy {
         raw?.serviceName ??
         '';
       const key = String(name).trim().toLowerCase();
-      if (!key) return null;
-      const mapped = byName.get(key);
-      return mapped ? Number(mapped) : null;
+      if (key && byName.has(key)) return byName.get(key)!;
+
+      return null;
     };
 
     for (const b of ap.blocks ?? []) {
       for (const s of (b as any).services ?? []) {
-        const id = pickId(s) ?? pickName(s);
+        const id = resolveId(s);
         if (id) out.add(id);
       }
     }
@@ -1302,12 +1366,46 @@ export class TurnosComponent implements OnDestroy {
     const hasBarber = this.hasBarberServicesSelected(serviceIds);
     if (!hasBarber) return 'AUTO';
 
+    const catalog = this.services() ?? [];
+    const byId = new Set<number>(catalog.map(s => Number(s.id)));
+    const byName = new Map<string, number>();
+    for (const s of catalog) {
+      const key = String(s.name ?? '').trim().toLowerCase();
+      if (key) byName.set(key, Number(s.id));
+    }
+
+    const resolveServiceId = (raw: any): number | null => {
+      const cand =
+        raw?.service_id ??
+        raw?.serviceId ??
+        raw?.service?.id ??
+        raw?.service?.pk ??
+        raw?.id ??
+        raw?.pk ??
+        null;
+
+      const n = Number(cand);
+      if (Number.isFinite(n) && (byId.size ? byId.has(n) : true)) return n;
+
+      const name =
+        raw?.name ??
+        raw?.service_name ??
+        raw?.service?.name ??
+        raw?.serviceName ??
+        '';
+      const key = String(name).trim().toLowerCase();
+      if (key && byName.has(key)) return byName.get(key)!;
+
+      return null;
+    };
+
     for (const b of ap.blocks ?? []) {
       const idsInBlock: number[] = [];
       for (const s of (b as any).services ?? []) {
-        const id = Number((s as any).id ?? (s as any).service_id ?? (s as any).service?.id);
-        if (Number.isFinite(id)) idsInBlock.push(id);
+        const sid = resolveServiceId(s);
+        if (sid) idsInBlock.push(sid);
       }
+
       const blockHasBarber = idsInBlock.some(id => this.groupOfServiceId(id) === 'BARBER');
       if (blockHasBarber && (b as any).worker) return String((b as any).worker);
     }

@@ -283,38 +283,90 @@ class AppointmentInlineEditAPIView(APIView):
             appt.save(update_fields=sorted(set(update_fields)))
 
             # ---------
-            # Actualiza bloques asociados (start/end siempre se sincronizan)
+            # Actualiza bloques asociados (start/end + worker + services)
             # ---------
             blocks = list(
                 AppointmentBlock.objects.select_for_update().filter(appointment_id=appt.id)
             )
+
+            # worker incoming: soporta worker_id o barber_id (frontend)
+            incoming_worker_id = data.get("worker_id", None)
+            if incoming_worker_id is None or incoming_worker_id == "":
+                incoming_worker_id = data.get("barber_id", None)
+
+            # normaliza worker id
+            worker_id_int: Optional[int] = None
+            if incoming_worker_id is not None and incoming_worker_id != "" and incoming_worker_id != "AUTO":
+                try:
+                    worker_id_int = int(incoming_worker_id)
+                except Exception:
+                    return Response({"detail": "worker_id/barber_id debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # services para setear en blocks (si aplica)
+            services_for_set = None
+            ids_int: List[int] = []
+            if service_ids is not None:
+                try:
+                    ids_int = [int(x) for x in (service_ids or [])]
+                except Exception:
+                    return Response({"detail": "service_ids debe ser una lista de enteros."}, status=status.HTTP_400_BAD_REQUEST)
+
+                # Preferimos el model desde el M2M real que se vaya a usar
+                # 1) si block tiene services (lo más probable en tu UI)
+                if blocks and hasattr(blocks[0], "services"):
+                    ServiceModel = blocks[0].services.model
+                    services_for_set = list(ServiceModel.objects.filter(id__in=ids_int))
+                    if len(services_for_set) != len(ids_int):
+                        return Response({"detail": "Uno o más service_ids no existen."}, status=status.HTTP_400_BAD_REQUEST)
+                # 2) fallback: si appointment tiene services
+                elif hasattr(appt, "services"):
+                    ServiceModel = appt.services.model
+                    services_for_set = list(ServiceModel.objects.filter(id__in=ids_int))
+                    if len(services_for_set) != len(ids_int):
+                        return Response({"detail": "Uno o más service_ids no existen."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # ahora aplicamos cambios por bloque
             for b in blocks:
+                dirty = set()
+
+                # sync tiempo
                 setattr(b, block_start_field, new_start_dt)
                 setattr(b, block_end_field, new_end_dt)
-                b.save(update_fields=[block_start_field, block_end_field])
+                dirty.update([block_start_field, block_end_field])
+
+                # sync worker (si el bloque lo soporta)
+                if worker_id_int is not None:
+                    # soporta FK típico "worker"
+                    if hasattr(b, "worker_id"):
+                        setattr(b, "worker_id", worker_id_int)
+                        dirty.add("worker")
+                    # soporta "barber_id" si tu bloque lo tuviera
+                    elif hasattr(b, "barber_id"):
+                        setattr(b, "barber_id", worker_id_int)
+                        dirty.add("barber")
+
+                # sync services en el bloque (si existe)
+                if services_for_set is not None and hasattr(b, "services"):
+                    try:
+                        b.services.set(services_for_set)
+                    except Exception:
+                        # no tumbamos el endpoint si hay restricciones raras
+                        pass
+
+                if dirty:
+                    # update_fields debe llevar NOMBRES DE CAMPOS del modelo (no *_id)
+                    # Para FK agregamos "worker"/"barber" arriba.
+                    b.save(update_fields=sorted(dirty))
 
             # ---------
-            # M2M services (si existe)
+            # M2M services a nivel Appointment (opcional)
             # ---------
-            if service_ids is not None and hasattr(appt, "services"):
+            if services_for_set is not None and hasattr(appt, "services"):
                 try:
-                    ids = [int(x) for x in (service_ids or [])]
-                    ServiceModel = appt.services.model
-                    services = list(ServiceModel.objects.filter(id__in=ids))
-                    if len(services) != len(ids):
-                        return Response(
-                            {"detail": "Uno o más service_ids no existen."},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    appt.services.set(services)
-                except ValueError:
-                    return Response(
-                        {"detail": "service_ids debe ser una lista de enteros."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+                    appt.services.set(services_for_set)
                 except Exception:
-                    # Si tu M2M tiene restricciones raras, no tumbamos el endpoint
                     pass
+
 
             # ---------
             # Audit (si existe)
