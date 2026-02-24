@@ -913,8 +913,13 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: 0% 0%; }
-  100% { background-position: -200% 0%; }
+  0% {
+    background-position: 0% 0%;
+  }
+
+  100% {
+    background-position: -200% 0%;
+  }
 }
 
 /* Modal */
@@ -995,17 +1000,17 @@
 .readonly {
   height: 42px;
   border-radius: 14px;
-  border: 1px solid rgba(0,0,0,0.10);
+  border: 1px solid rgba(0, 0, 0, 0.10);
   padding: 0 12px;
   display: flex;
   align-items: center;
-  background: rgba(0,0,0,0.02);
+  background: rgba(0, 0, 0, 0.02);
   font-size: 13px;
 }
 
 .divider {
   height: 1px;
-  background: rgba(0,0,0,0.08);
+  background: rgba(0, 0, 0, 0.08);
   margin: 2px 0;
 }
 
@@ -1567,6 +1572,96 @@
   }
 
   .wGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================
+   Responsive FIX — Modal de edición (mid screens)
+   PÉGALO AL FINAL DEL SCSS
+   ========================================= */
+
+/* 1) Modal siempre dentro del viewport + scroll interno */
+.overlay {
+  padding: 12px;
+  /* un poco menos en medianas */
+}
+
+.modal {
+  /* antes solo era width + overflow hidden; ahora lo hacemos “layout” */
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* mantiene bordes redondeados */
+}
+
+.modal__head {
+  flex: 0 0 auto;
+}
+
+.modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* CLAVE para que el overflow funcione dentro de flex */
+  overflow: auto;
+  /* scroll interno */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 2) Modal ancho: ajusta mejor en pantallas medianas */
+.modal--wide {
+  width: min(920px, 100%);
+}
+
+/* 3) Grid del formulario de edición: 2 columnas “cómodas” y baja a 1 cuando ya no cabe */
+.egrid {
+  /* en vez de minmax(0,1fr) (que aplasta), dale un mínimo real */
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+}
+
+/* cuando el viewport o el modal no da, baja a 1 columna antes (medianas) */
+@media (max-width: 980px) {
+  .modal--wide {
+    width: min(760px, 100%);
+  }
+
+  .egrid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal__head,
+  .modal__body {
+    padding: 12px;
+  }
+}
+
+/* 4) Botonera del modal: siempre visible (sticky) sin dañar el diseño */
+.modal__body .modal__actions {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  padding-top: 12px;
+  margin-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* 5) Servicios dentro del modal: evita 3 columnas en espacios justos */
+.modal--wide .svcGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .modal--wide {
+    width: 100%;
+  }
+
+  .modal__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .modal--wide .svcGrid {
     grid-template-columns: 1fr;
   }
 }
