@@ -1789,3 +1789,115 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================
+   Modal de pago grande y legible
+   PÉGALO AL FINAL DEL SCSS
+   ========================================= */
+
+.modal--pay {
+  width: min(920px, 100%);
+}
+
+.modal--pay .modal__body {
+  gap: 14px;
+}
+
+.payHero {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.payHero__label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  font-weight: 800;
+}
+
+.payHero__value {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: .2px;
+  line-height: 1.1;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.payHero__meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.60);
+}
+
+.payHero__meta .dot {
+  margin: 0 8px;
+  opacity: .6;
+}
+
+.payHero__badge {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.payHero__badge.on {
+  border-color: rgba(37, 99, 235, 0.30);
+  background: rgba(37, 99, 235, 0.10);
+  color: rgba(20, 55, 150, 0.95);
+}
+
+/* Inputs grandes solo para el modal de pago */
+.minput--big,
+.modal--pay .mselect--big {
+  height: 56px;
+  border-radius: 16px;
+  font-size: 18px;
+}
+
+.minput--big {
+  font-weight: 900;
+  letter-spacing: .2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Acciones pegadas abajo (más fácil en pantallas pequeñas) */
+.modal__actions--sticky {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  padding-top: 12px;
+  margin-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 640px) {
+  .modal--pay {
+    width: 100%;
+  }
+
+  .payHero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .payHero__value {
+    font-size: 24px;
+  }
+
+  .modal__actions--sticky {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

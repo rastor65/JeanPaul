@@ -107,7 +107,6 @@ class PublicAppointmentCreateAPIView(APIView):
 
         # -------- Cliente casual: crear (solo nombre). Evitar chocar por phone unique --------
         if customer_type == Customer.TYPE_CASUAL:
-            # Recomendación: NO guardes phone en casual para evitar choques por unique.
             customer = Customer.objects.create(
                 customer_type=Customer.TYPE_CASUAL,
                 name=name,

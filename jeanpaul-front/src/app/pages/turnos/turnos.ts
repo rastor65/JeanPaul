@@ -5,7 +5,7 @@ import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http'
 import { environment } from '../../../environments/environment';
 import { BookingService, AvailabilityOption } from '../../core/services/booking';
 import { firstValueFrom, forkJoin, Observable, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { catchError, map, single } from 'rxjs/operators';
 import { WorkerItineraryModalComponent } from '../../shared/worker-itinerary-modal/worker-itinerary-modal';
 import { ReserveModalComponent } from '../../shared/reserve-modal/reserve-modal';
 import { ReserveUiService } from '../../shared/reserve-ui.service';
@@ -142,6 +142,11 @@ export class TurnosComponent implements OnDestroy {
   payAmount = signal<string>('');
   payMethod = signal<PayMethod>('CASH');
   payNote = signal<string>('');
+  payMode = signal<'CREATE' | 'EDIT'>('CREATE');
+
+  num(v: any): number {
+    return this.toNum(v);
+  }
 
   // Crear
   createOpen = signal<boolean>(false);
@@ -860,7 +865,7 @@ export class TurnosComponent implements OnDestroy {
   // -----------------------------
   // Pago
   // -----------------------------
-  openPayment(ap: Appointment) {
+  openPayment(ap: Appointment, mode: 'CREATE' | 'EDIT' = 'CREATE') {
     if (!ap) return;
 
     if (!this.isBillable(ap)) {
@@ -868,12 +873,45 @@ export class TurnosComponent implements OnDestroy {
       return;
     }
 
+    // Si intentan editar sin pago registrado, lo mandamos a crear
+    const isPaid = this.isPaid(ap);
+    const effectiveMode: 'CREATE' | 'EDIT' = (mode === 'EDIT' && !isPaid) ? 'CREATE' : mode;
+
     this.selectedId.set(ap.id);
     this.error.set('');
-    this.payMethod.set('CASH');
+    this.payMode.set(effectiveMode);
+
+    // Prefill
+    this.payMethod.set((ap.payment_method as PayMethod) || 'CASH');
     this.payNote.set('');
-    this.payAmount.set(this.toIntString(ap.recommended_total));
+
+    if (effectiveMode === 'EDIT') {
+      this.payAmount.set(this.toIntString(ap.paid_total ?? '0') || this.toIntString(ap.recommended_total));
+    } else {
+      this.payAmount.set(this.toIntString(ap.recommended_total));
+    }
+
     this.payOpen.set(true);
+  }
+
+  openEditPayment(ap: Appointment) {
+    if (!ap) return;
+
+    if (!this.isBillable(ap)) {
+      this.toastMsg('Este turno no se cobra (no asistió o canceló).');
+      return;
+    }
+
+    if (!this.isPaid(ap)) {
+      // si no hay pago, abrimos en modo registro
+      this.openPayment(ap, 'CREATE');
+      return;
+    }
+
+    const ok = confirm('¿Editar el pago registrado de este turno?');
+    if (!ok) return;
+
+    this.openPayment(ap, 'EDIT');
   }
 
   closePayment() {
@@ -904,7 +942,7 @@ export class TurnosComponent implements OnDestroy {
       }
     }
 
-    this.openPayment(ap);
+    this.openPayment(ap, 'CREATE');
   }
 
   savePayment(ap: Appointment) {
@@ -926,18 +964,25 @@ export class TurnosComponent implements OnDestroy {
       note: this.payNote() || null,
     };
 
-    this.http.post<any>(url, payload, { withCredentials: true }).subscribe({
-      next: () => {
+    // Intentamos PATCH/PUT primero (editar). Si el backend no soporta, cae a POST.
+    this.tryEndpoints([
+      { method: 'PATCH', url, body: payload },
+      { method: 'PUT', url, body: payload },
+      { method: 'POST', url, body: payload },
+    ])
+      .then(() => {
         this.busyId.set(null);
         this.payOpen.set(false);
-        this.toastMsg('Pago registrado.');
+
+        const msg = this.payMode() === 'EDIT' ? 'Pago actualizado.' : 'Pago registrado.';
+        this.toastMsg(msg);
+
         this.refresh(ap.id);
-      },
-      error: err => {
+      })
+      .catch((err) => {
         this.busyId.set(null);
         this.setHttpError(err, url);
-      },
-    });
+      });
   }
 
   private doAction(id: number, action: 'attend' | 'no-show' | 'cancel', onOk: () => void) {
@@ -1894,7 +1939,7 @@ export class TurnosComponent implements OnDestroy {
     return Number.isFinite(out) ? out : 0;
   }
 
-  private toIntString(v: any): string {
+  toIntString(v: any): string {
     const n = this.toNum(v);
     if (!Number.isFinite(n) || n <= 0) return '';
     return String(Math.trunc(n));

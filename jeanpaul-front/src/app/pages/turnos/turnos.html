@@ -532,11 +532,17 @@
               <strong class="k__value">{{ ap.paid_by || '—' }}</strong>
             </div>
           </div>
-
           <div class="detailPayActions">
-            <button class="btn btn--primary" type="button" (click)="quickCheckout(ap)"
-              [disabled]="busyId()===ap.id || isPaid(ap) || !isBillable(ap)">
-              Cobrar
+            <!-- Registrar / cobrar -->
+            <button class="btn btn--primary" type="button" (click)="openPayment(ap, 'CREATE')"
+              [disabled]="busyId()===ap.id || !isBillable(ap)">
+              {{ isPaid(ap) ? 'Ver pago' : 'Registrar pago' }}
+            </button>
+
+            <!-- Editar pago (solo si ya existe) -->
+            <button class="btn btn--ghost" type="button" (click)="openEditPayment(ap)"
+              [disabled]="busyId()===ap.id || !isBillable(ap) || !isPaid(ap)">
+              Editar pago
             </button>
           </div>
         </div>
@@ -580,26 +586,57 @@
   </section>
 
   <!-- PAYMENT MODAL -->
+  <!-- PAYMENT MODAL (GRANDE: Registrar / Editar) -->
   <div class="overlay" *ngIf="payOpen()">
-    <div class="modal">
+    <div class="modal modal--pay">
       <div class="modal__head">
         <div>
-          <strong>Registrar pago</strong>
-          <div class="muted" *ngIf="selected() as ap">Turno #{{ ap.id }}</div>
+          <strong>{{ payMode()==='EDIT' ? 'Editar pago' : 'Registrar pago' }}</strong>
+          <div class="muted" *ngIf="selected() as ap">
+            Turno #{{ ap.id }} • {{ ap.customer.name }} • Recomendado: {{ money(ap.recommended_total) }}
+          </div>
         </div>
         <button class="x" type="button" (click)="closePayment()">×</button>
       </div>
 
       <div class="modal__body" *ngIf="selected() as ap">
+        <!-- Resumen grande -->
+        <div class="payHero">
+          <div class="payHero__left">
+            <div class="payHero__label">Monto a registrar</div>
+            <div class="payHero__value">{{ money(payAmount()) }}</div>
+            <div class="payHero__meta" *ngIf="payMode()==='EDIT'">
+              Pagado actual: <strong>{{ ap.paid_total ? money(ap.paid_total) : '—' }}</strong>
+              <span class="dot">•</span>
+              Diferencia vs recomendado:
+              <strong>{{ money(num(payAmount()) - num(ap.recommended_total)) }}</strong>
+            </div>
+          </div>
+
+          <div class="payHero__right">
+            <div class="payHero__badge" [class.on]="payMode()==='EDIT'">
+              {{ payMode()==='EDIT' ? 'Edición' : 'Registro' }}
+            </div>
+          </div>
+        </div>
+
         <label class="mfield">
           <span>Monto</span>
-          <input class="minput" type="text" inputmode="decimal" placeholder="Ej: 30000" [value]="payAmount()"
-            (input)="payAmount.set(($any($event.target)).value)" />
+          <input class="minput minput--big" type="text" inputmode="decimal" placeholder="Ej: 30000"
+            [value]="payAmount()" (input)="payAmount.set(($any($event.target)).value)" />
+          <small class="hint muted" style="font-size:12px">
+            Recomendado: {{ money(ap.recommended_total) }}
+            <button type="button" class="miniBtn" style="margin-left:8px"
+              (click)="payAmount.set(toIntString(ap.recommended_total))">
+              Usar recomendado
+            </button>
+          </small>
         </label>
 
         <label class="mfield">
           <span>Método</span>
-          <select class="mselect" [value]="payMethod()" (change)="payMethod.set(($any($event.target)).value)">
+          <select class="mselect mselect--big" [value]="payMethod()"
+            (change)="payMethod.set(($any($event.target)).value)">
             <option value="CASH">Efectivo</option>
             <option value="TRANSFER">Transferencia</option>
             <option value="CARD">Tarjeta</option>
@@ -612,16 +649,16 @@
             (input)="payNote.set(($any($event.target)).value)" />
         </label>
 
-        <div class="modal__actions">
+        <div class="modal__actions modal__actions--sticky">
           <button class="btn btn--ghost" type="button" (click)="closePayment()">Cancelar</button>
           <button class="btn btn--primary" type="button" [disabled]="busyId() === ap.id" (click)="savePayment(ap)">
-            {{ busyId() === ap.id ? 'Guardando…' : 'Guardar pago' }}
+            {{ busyId() === ap.id ? 'Guardando…' : (payMode()==='EDIT' ? 'Guardar cambios' : 'Guardar pago') }}
           </button>
         </div>
       </div>
     </div>
   </div>
-
+  
   <!-- EDIT MODAL (UNIFICADO - SIN DISPONIBILIDAD) -->
   <div class="overlay" *ngIf="editOpen()">
     <div class="modal modal--wide">
