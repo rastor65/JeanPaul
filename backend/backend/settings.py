@@ -104,6 +104,14 @@ USE_I18N = True
 USE_TZ = True
 
 # =========================
+# Django Session (12 horas)
+# =========================
+SESSION_COOKIE_AGE = 60 * 60 * 16  # 16 horas
+SESSION_SAVE_EVERY_REQUEST = True  # renueva el contador con cada request
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+
+# =========================
 # Static
 # =========================
 STATIC_URL = "/static/"
@@ -140,22 +148,12 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # =========================
-# Cookies (DEV)
-# =========================
-SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_SECURE = False
-
-# =========================
 # JWT Cookies
 # =========================
 JWT_COOKIE_ACCESS = "jp_access"
 JWT_COOKIE_REFRESH = "jp_refresh"
 
 JWT_COOKIE_HTTPONLY = True
-JWT_COOKIE_SECURE = False
-JWT_COOKIE_SAMESITE = "Lax"
 JWT_COOKIE_PATH = "/"
 JWT_COOKIE_DOMAIN = None
 
@@ -178,7 +176,7 @@ REST_FRAMEWORK = {
 # JWT config
 # =========================
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=16),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
 
@@ -193,3 +191,4 @@ CSRF_COOKIE_SAMESITE = "None"
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
+
