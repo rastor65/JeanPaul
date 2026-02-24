@@ -9,8 +9,6 @@ import { catchError, map } from 'rxjs/operators';
 import { WorkerItineraryModalComponent } from '../../shared/worker-itinerary-modal/worker-itinerary-modal';
 import { ReserveModalComponent } from '../../shared/reserve-modal/reserve-modal';
 import { ReserveUiService } from '../../shared/reserve-ui.service';
-import { time } from 'node:console';
-import { __values } from 'tslib';
 
 type StatusFilter = 'ALL' | 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
 type Status = 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
@@ -1226,8 +1224,9 @@ export class TurnosComponent implements OnDestroy {
       await this.tryEndpoints([
         { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyA },
         { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyB },
-      ]);
 
+      ]);
+      
       this.editOpen.set(false);
       await this.refresh(ap.id);
       this.toastMsg('Turno actualizado.');
