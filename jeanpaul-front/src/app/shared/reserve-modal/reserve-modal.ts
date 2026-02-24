@@ -35,6 +35,7 @@ type ServiceCategoryGroup = {
 export class ReserveModalComponent {
   @Input() open = false;
   @Output() closed = new EventEmitter<void>();
+  @Output() created = new EventEmitter<any>();
 
   @ViewChild('slotsEl') slotsEl?: ElementRef<HTMLElement>;
 
@@ -471,6 +472,12 @@ export class ReserveModalComponent {
       next: (res: any) => {
         this.zone.run(() => {
           this.loading = false;
+          const createdPayload = {
+            ...res,
+            date: this.date,
+          };
+          this.created.emit(createdPayload);
+          
           const id = res?.appointment_id || res?.id;
           const label = id ? `Reserva confirmada (ID: ${id}).` : 'Reserva confirmada.';
           this.toast.success(label, 'Reserva creada');

@@ -9,6 +9,7 @@ import { catchError, map } from 'rxjs/operators';
 import { WorkerItineraryModalComponent } from '../../shared/worker-itinerary-modal/worker-itinerary-modal';
 import { ReserveModalComponent } from '../../shared/reserve-modal/reserve-modal';
 import { ReserveUiService } from '../../shared/reserve-ui.service';
+import { FormsModule } from '@angular/forms';
 
 type StatusFilter = 'ALL' | 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
 type Status = 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'NO_SHOW';
@@ -88,7 +89,7 @@ type StaffAgendaResponse = {
 @Component({
   selector: 'app-turnos',
   standalone: true,
-  imports: [CommonModule, WorkerItineraryModalComponent, ReserveModalComponent],
+  imports: [CommonModule, WorkerItineraryModalComponent, ReserveModalComponent, FormsModule],
   templateUrl: './turnos.html',
   styleUrl: './turnos.scss',
 })
@@ -488,6 +489,21 @@ export class TurnosComponent implements OnDestroy {
       }
     });
 
+    effect(() => {
+      if (!this.editOpen()) return;
+      if (!this.workers().length) return;
+
+      const ap = this.selected();
+      if (!ap) return;
+
+      if (this.eWorkerId() === 'AUTO') {
+        this.eWorkerId.set(this.pickAssignedWorkerId(ap));
+      }
+      if (this.eBarberId() === 'AUTO') {
+        this.eBarberId.set(this.pickAssignedWorkerId(ap, 'BARBER'));
+      }
+    });
+
   }
 
   ngOnDestroy(): void {
@@ -529,22 +545,29 @@ export class TurnosComponent implements OnDestroy {
   }
 
   // ✅ cuando el modal cree la reserva, refrescamos y seleccionamos
-  onReserveCreated(res: any) {
+  async onReserveCreated(res: any) {
     const createdId =
       Number(res?.appointment_id) ||
       Number(res?.id) ||
       Number(res?.appointment?.id) ||
       null;
 
-    this.reserveOpen.set(false);
+    // Cierra el modal correctamente (porque el open viene del ReserveUiService)
+    this.closeReserve();
 
-    if (createdId) {
-      this.toastMsg(`Turno creado #${createdId}`);
-      this.refresh(createdId);
-    } else {
-      this.toastMsg('Turno creado.');
-      this.refresh();
+    // Si el backend devuelve start_datetime o date, sincroniza el día del listado
+    const createdDate =
+      (typeof res?.date === 'string' && res.date) ? res.date :
+        (res?.start_datetime ? this.toISODate(new Date(res.start_datetime)) : null);
+
+    if (createdDate && createdDate !== this.date()) {
+      this.date.set(createdDate);
     }
+
+    this.toastMsg(createdId ? `Turno creado #${createdId}` : 'Turno creado.');
+
+    // IMPORTANTE: espera el refresh para que el listado se actualice seguro
+    await this.refresh(createdId ?? undefined);
   }
 
   // -----------------------------
@@ -1113,17 +1136,18 @@ export class TurnosComponent implements OnDestroy {
     this.eOrigTime.set(time0);
     this.eTime.set(time0);
 
+    // servicios seleccionados (igual que lo tienes)
     const svcIds = this.extractServiceIds(ap);
     this.eOrigServiceIds.set(svcIds);
     this.eSelectedServiceIds.set(svcIds);
 
-    const barberId = this.findBarberWorkerIdFromBlocks(ap, svcIds);
-    this.eOrigBarberId.set(barberId || 'AUTO');
-    this.eBarberId.set(barberId || 'AUTO');
+    // worker asignado real (siempre)
+    this.eWorkerId.set(this.pickAssignedWorkerId(ap));
 
-    // si el turno NO es de barbería, dejamos un worker “por si quieres forzar”
-    const firstWorker = ap.blocks?.[0]?.worker;
-    this.eWorkerId.set(firstWorker ? String(firstWorker) : 'AUTO');
+    // barber asignado real (si existe BARBER)
+    const assignedBarber = this.pickAssignedWorkerId(ap, 'BARBER');
+    this.eOrigBarberId.set(assignedBarber);
+    this.eBarberId.set(assignedBarber);
 
     // duración: si hay catálogo, sugerida; si no, la actual del turno
     const suggested = this.eDurationByServices();
@@ -1156,6 +1180,27 @@ export class TurnosComponent implements OnDestroy {
     // solo importa si hay servicios de barbería
     if (!this.hasBarberServicesSelected(this.eSelectedServiceIds())) return false;
     return String(this.eOrigBarberId() || 'AUTO') !== String(this.eBarberId() || 'AUTO');
+  }
+
+  private roleOfWorkerId(workerId: any): Group | undefined {
+    const id = Number(workerId);
+    if (!Number.isFinite(id)) return undefined;
+    return this.workers().find(w => Number(w.id) === id)?.role;
+  }
+
+  private pickAssignedWorkerId(ap: Appointment, role?: Group): string {
+    const blocks = ap?.blocks ?? [];
+    if (!blocks.length) return 'AUTO';
+
+    // 1) si me piden un rol, busco el bloque cuyo worker tenga ese rol
+    if (role) {
+      const hit = blocks.find(b => this.roleOfWorkerId(b.worker) === role);
+      if (hit?.worker) return String(hit.worker);
+    }
+
+    // 2) fallback: sequence 1 (tu backend arma BARBER primero; si no existe, el primero)
+    const b1 = blocks.find(b => Number(b.sequence) === 1) ?? blocks[0];
+    return b1?.worker ? String(b1.worker) : 'AUTO';
   }
 
   async saveEdit(ap: Appointment) {
@@ -1226,7 +1271,7 @@ export class TurnosComponent implements OnDestroy {
         { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyB },
 
       ]);
-      
+
       this.editOpen.set(false);
       await this.refresh(ap.id);
       this.toastMsg('Turno actualizado.');
@@ -1240,6 +1285,23 @@ export class TurnosComponent implements OnDestroy {
       this.busyId.set(null);
       this.editing.set(false);
     }
+  }
+
+  private pickWorkerIdFromAppointment(ap: Appointment, group?: Group): string {
+    const blocks = ap?.blocks ?? [];
+    if (!blocks.length) return 'AUTO';
+
+    // Si se pide un grupo (BARBER/NAILS/FACIAL) intentamos encontrar el bloque por sus servicios
+    if (group) {
+      const b = blocks.find(bl =>
+        (bl.services ?? []).some(s => this.groupOfServiceId(Number((s as any).id)) === group)
+      );
+      if (b?.worker) return String(b.worker);
+    }
+
+    // Fallback: bloque sequence=1, si no existe el primero
+    const b1 = blocks.find(bl => Number(bl.sequence) === 1) ?? blocks[0];
+    return b1?.worker ? String(b1.worker) : 'AUTO';
   }
 
   private extractErr(e: any): string {

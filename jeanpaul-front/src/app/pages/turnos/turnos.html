@@ -668,18 +668,18 @@
           <!-- Si hay barbería -> seleccionar barbero -->
           <label class="mfield" *ngIf="eHasBarberServices()">
             <span>Barbero</span>
-            <select class="mselect" [value]="eBarberId()" (change)="eBarberId.set(($any($event.target)).value)">
+            <select class="mselect" [ngModel]="eBarberId()" (ngModelChange)="eBarberId.set($event)">
               <option value="AUTO">AUTO (backend decide)</option>
-              <option *ngFor="let w of barberWorkers()" [value]="w.id">{{ w.label }}</option>
+              <option *ngFor="let w of barberWorkers()" [value]="'' + w.id">{{ w.label }}</option>
             </select>
           </label>
 
           <!-- Si NO hay barbería -> permitir escoger worker (si tu backend lo soporta) -->
           <label class="mfield" *ngIf="!eHasBarberServices()">
             <span>Trabajador</span>
-            <select class="mselect" [value]="eWorkerId()" (change)="eWorkerId.set(($any($event.target)).value)">
+            <select class="mselect" [ngModel]="eWorkerId()" (ngModelChange)="eWorkerId.set($event)">
               <option value="AUTO">AUTO</option>
-              <option *ngFor="let w of workers()" [value]="w.id">{{ w.labelFull || w.label }}</option>
+              <option *ngFor="let w of workers()" [value]="'' + w.id">{{ w.labelFull || w.label }}</option>
             </select>
             <small class="hint muted" style="font-size:12px">
               Para uñas/facial puede que el backend ignore este cambio si el trabajador es fijo.
@@ -741,7 +741,8 @@
     {{ toast() }}
   </div>
 
-  <app-reserve-modal [open]="(reserveOpen$ | async) ?? false" (closed)="closeReserve()">
+  <app-reserve-modal [open]="(reserveOpen$ | async) ?? false" (closed)="closeReserve()"
+    (created)="onReserveCreated($event)">
   </app-reserve-modal>
 
 </section>
