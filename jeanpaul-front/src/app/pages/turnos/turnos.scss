@@ -1665,3 +1665,127 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================
+   KPI — Simple, elegante y compacto
+   PÉGALO AL FINAL (sobrescribe estilos KPI)
+   ========================================= */
+
+.kpi {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+
+  /* 6 KPIs: ajusta solo */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.kcard {
+  /* acento por defecto */
+  --accent: rgba(0, 0, 0, 0.18);
+
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 14px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.06);
+
+  /* COMPACTO */
+  padding: 10px 12px;
+  min-height: 0;
+
+  display: grid;
+  gap: 4px;
+  align-content: start;
+
+  position: relative;
+  overflow: hidden;
+
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+
+/* Línea superior muy sutil (color) */
+.kcard::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: .85;
+}
+
+.kcard:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 0, 0, 0.14);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
+}
+
+.klabel {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: .4px;
+  color: rgba(0, 0, 0, 0.55);
+  line-height: 1.1;
+}
+
+.kvalue {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: .2px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Colores por posición (según tu HTML actual) */
+.kpi .kcard:nth-child(1) {
+  --accent: rgba(0, 0, 0, 0.20);
+}
+
+/* Total */
+.kpi .kcard:nth-child(2) {
+  --accent: rgba(37, 99, 235, 0.55);
+}
+
+/* Reservados */
+.kpi .kcard:nth-child(3) {
+  --accent: rgba(22, 163, 74, 0.55);
+}
+
+/* Atendidos */
+.kpi .kcard:nth-child(4) {
+  --accent: rgba(220, 38, 38, 0.55);
+}
+
+/* Cancelados */
+.kpi .kcard:nth-child(5) {
+  --accent: rgba(245, 158, 11, 0.60);
+}
+
+/* No asistió */
+.kpi .kcard:nth-child(6) {
+  --accent: rgba(5, 150, 105, 0.60);
+}
+
+/* Total cobrado */
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .kpi {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .kpi {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .kpi {
+    grid-template-columns: 1fr;
+  }
+}
