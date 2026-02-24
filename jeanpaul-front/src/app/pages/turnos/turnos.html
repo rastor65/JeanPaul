@@ -64,7 +64,7 @@
       <strong class="kvalue">{{ kpis().cancelled }}</strong>
     </div>
     <div class="kcard">
-      <span class="klabel">No show</span>
+      <span class="klabel">No asistió</span>
       <strong class="kvalue">{{ kpis().noShow }}</strong>
     </div>
     <div class="kcard">
@@ -93,7 +93,7 @@
         <span>Cancelados</span><strong>{{ counts().CANCELLED }}</strong>
       </button>
       <button class="chip" [class.active]="status()==='NO_SHOW'" (click)="setStatus('NO_SHOW')" type="button">
-        <span>No show</span><strong>{{ counts().NO_SHOW }}</strong>
+        <span>No asistió</span><strong>{{ counts().NO_SHOW }}</strong>
       </button>
     </div>
 
@@ -557,7 +557,7 @@
 
           <button class="btn btn--ghost" type="button" [disabled]="busyId() === ap.id || ap.status !== 'RESERVED'"
             (click)="markNoShow(ap)">
-            No show
+            No asistió
           </button>
 
           <button class="btn btn--danger" type="button" [disabled]="busyId() === ap.id || ap.status !== 'RESERVED'"
