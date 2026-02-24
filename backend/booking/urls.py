@@ -5,11 +5,13 @@ from booking.api.appointments import AppointmentCreateAPIView
 from booking.api.agenda import StaffAgendaAPIView, MyAgendaAPIView
 from booking.api.public_appointments import PublicAppointmentCreateAPIView
 from booking.api_customers_staff import CustomerStaffListCreateAPIView, CustomerStaffDetailAPIView
-from booking.views import AppointmentStaffList
+from booking.views import AppointmentStaffList, Appointment
 from booking.api.reschedule import AppointmentRescheduleAPIView
 
 from booking.api.reschedule import AppointmentRescheduleAPIView
 from booking.api.inline_edit import AppointmentInlineEditAPIView
+
+
 
 
 from booking.api.management import (

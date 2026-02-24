@@ -1224,20 +1224,8 @@ export class TurnosComponent implements OnDestroy {
       };
 
       await this.tryEndpoints([
-        // ✅ el más probable
         { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyA },
-        { method: 'POST', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyA },
-
-        // ✅ por si inline-edit no aplica servicios/worker
         { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/inline-edit/`), body: bodyB },
-
-        // ✅ por si el update directo está habilitado
-        { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/`), body: bodyA },
-        { method: 'PATCH', url: this.api(`/api/staff/appointments/${ap.id}/`), body: bodyB },
-
-        // ✅ fallback (por si está sin /staff)
-        { method: 'PATCH', url: this.api(`/api/appointments/${ap.id}/`), body: bodyA },
-        { method: 'PATCH', url: this.api(`/api/appointments/${ap.id}/`), body: bodyB },
       ]);
 
       this.editOpen.set(false);

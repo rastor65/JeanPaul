@@ -2,17 +2,21 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
-from typing import Tuple, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from booking.models import Appointment, AppointmentBlock
+from booking.models import Appointment, AppointmentBlock, AppointmentServiceLine
+
+# Catálogo / Staff
+from catalog.models import Service as CatalogService
+from staffing.models import Worker
 
 # Si tienes AppointmentAudit, lo intentamos usar sin romper el arranque
 try:
@@ -21,6 +25,9 @@ except Exception:  # pragma: no cover
     AppointmentAudit = None
 
 
+# ==========================================================
+# Helpers genéricos
+# ==========================================================
 def _datetime_field_names_for_model(model) -> Tuple[str, str]:
     """
     Detecta campos start/end en un modelo.
@@ -38,17 +45,13 @@ def _datetime_field_names_for_model(model) -> Tuple[str, str]:
 
 
 def _parse_dt(value: Any):
-    """
-    Acepta ISO string o datetime.
-    Retorna datetime o None si no parsea.
-    """
+    """Acepta ISO string o datetime. Retorna datetime o None si no parsea."""
     if value is None:
         return None
     if hasattr(value, "tzinfo"):
         return value
     if isinstance(value, str):
-        dt = parse_datetime(value)
-        return dt
+        return parse_datetime(value)
     return None
 
 
@@ -58,9 +61,7 @@ def _field_map(model) -> Dict[str, Any]:
 
 
 def _coerce_value(field, value: Any):
-    """
-    Convierte value según tipo de Field, de forma defensiva.
-    """
+    """Convierte value según tipo de Field, de forma defensiva."""
     if value is None:
         return None
 
@@ -70,7 +71,13 @@ def _coerce_value(field, value: Any):
         if internal in ("CharField", "TextField", "EmailField", "URLField"):
             return str(value)
 
-        if internal in ("IntegerField", "BigIntegerField", "PositiveIntegerField", "SmallIntegerField", "PositiveSmallIntegerField"):
+        if internal in (
+            "IntegerField",
+            "BigIntegerField",
+            "PositiveIntegerField",
+            "SmallIntegerField",
+            "PositiveSmallIntegerField",
+        ):
             return int(value)
 
         if internal in ("FloatField",):
@@ -91,17 +98,13 @@ def _coerce_value(field, value: Any):
             return dt
 
         if internal in ("DateField",):
-            # Si llega como "YYYY-MM-DD"
             if isinstance(value, str):
-                # Django puede castear string a DateField al guardar en muchos casos,
-                # pero preferimos dejarlo como string válido.
                 return value.strip()
             return value
 
         # ForeignKey y otros: por lo general aceptan pk (int/str) en *_id
         return value
     except Exception:
-        # Si falla la coerción, devolvemos tal cual y que el save/DB valide
         return value
 
 
@@ -112,186 +115,96 @@ def _validate_choice(field, value: Any) -> bool:
     allowed = {c[0] for c in field.choices}
     return value in allowed
 
-from typing import Optional, List, Tuple
 
-def _find_service_m2m_field(block) -> Optional[Tuple[str, object]]:
-    """
-    Busca un ManyToManyField en AppointmentBlock que apunte a un modelo tipo Service.
-    Retorna (field_name, ServiceModel) o None.
-    """
-    for f in block._meta.many_to_many:
-        try:
-            remote = f.remote_field.model
-            name = (remote.__name__ or "").lower()
-            if "service" in name or "servicio" in name or f.name in ("services", "servicios"):
-                return f.name, remote
-        except Exception:
-            continue
+# ==========================================================
+# Helpers específicos de tu modelo (service_lines snapshots)
+# ==========================================================
+def _infer_group_from_text(text: str) -> str:
+    raw = (text or "").lower()
+    nails_keys = ["uña", "unas", "uñas", "manicure", "pedicure", "nails"]
+    facial_keys = ["facial", "limpieza facial", "rostro", "skin"]
 
-    # fallback por nombre del field
-    for f in block._meta.many_to_many:
-        if "service" in f.name.lower() or "servicio" in f.name.lower():
+    if any(k in raw for k in nails_keys):
+        return "NAILS"
+    if any(k in raw for k in facial_keys):
+        return "FACIAL"
+    return "BARBER"
+
+
+def _group_for_service(svc: CatalogService) -> str:
+    cat_name = ""
+    try:
+        cat = getattr(svc, "category", None)
+        cat_name = getattr(cat, "name", "") or getattr(cat, "nombre", "") or ""
+    except Exception:
+        cat_name = ""
+    text = f"{cat_name} {getattr(svc, 'name', '')}"
+    return _infer_group_from_text(text)
+
+
+def _pick_worker_for_role(role: str, barber_id: Optional[int] = None, current: Optional[Worker] = None) -> Optional[Worker]:
+    """
+    - BARBER: si mandan barber_id -> ese. Si no, conserva current. Si no, primero BARBER.
+    - NAILS/FACIAL: worker fijo (primero por rol).
+    """
+    if role == "BARBER":
+        if barber_id:
+            return Worker.objects.filter(id=barber_id).first()
+        if current:
+            return current
+        return Worker.objects.filter(role="BARBER").first()
+
+    return Worker.objects.filter(role=role).first()
+
+
+def _to_int_list(value: Any) -> List[int]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        out = []
+        for x in value:
             try:
-                return f.name, f.remote_field.model
+                out.append(int(x))
             except Exception:
                 continue
-
-    return None
-
-
-def _find_service_through_relation(block) -> Optional[Tuple[str, object, str]]:
-    """
-    Busca una relación reverse (one-to-many) tipo ThroughModel que tenga:
-    - FK al block
-    - FK a un modelo tipo Service
-    Retorna (accessor_name, ThroughModel, service_fk_field_name) o None.
-    """
-    for rel in block._meta.related_objects:
-        if not getattr(rel, "one_to_many", False):
-            continue
-
-        Through = rel.related_model
-        fields = list(Through._meta.fields)
-
-        # el FK al block ya lo tenemos en rel.field
-        block_fk_name = rel.field.name
-
-        # buscamos otro FK en Through que apunte a Service
-        service_fk_name = None
-        ServiceModel = None
-
-        for f in fields:
-            if not getattr(f, "many_to_one", False):
-                continue
-            if f.name == block_fk_name:
-                continue
-
-            try:
-                remote = f.remote_field.model
-                remote_name = (remote.__name__ or "").lower()
-                if "service" in remote_name or "servicio" in remote_name or "service" in f.name.lower():
-                    service_fk_name = f.name
-                    ServiceModel = remote
-                    break
-            except Exception:
-                continue
-
-        if service_fk_name and ServiceModel:
-            accessor = rel.get_accessor_name()  # ej: appointmentblockservice_set
-            return accessor, Through, service_fk_name
-
-    return None
-
-def _apply_services_to_block(block, service_ids: List[int]) -> None:
-    """
-    Actualiza los servicios del AppointmentBlock sin asumir el nombre del campo.
-    Soporta:
-    - M2M directo en el block (field tipo services)
-    - relación through reverse (ej: appointmentblockservice_set)
-    - campo service_ids (Array/JSON) si existe
-    """
-    ids = [int(x) for x in (service_ids or [])]
-
-    # 1) Si el bloque tiene M2M directo
-    m2m = _find_service_m2m_field(block)
-    if m2m:
-        field_name, ServiceModel = m2m
-        manager = getattr(block, field_name, None)
-
-        # solo si es manager real con .set()
-        if manager is not None and hasattr(manager, "set"):
-            qs = list(ServiceModel.objects.filter(id__in=ids))
-            if len(qs) != len(ids):
-                raise ValueError("Uno o más service_ids no existen.")
-            manager.set(qs)
-            return
-
-    # 2) Si el bloque guarda ids en un campo tipo Array/JSON
-    if hasattr(block, "service_ids"):
-        try:
-            setattr(block, "service_ids", ids)
-            block.save(update_fields=["service_ids"])
-            return
-        except Exception:
-            pass
-
-    # 3) Si usa modelo intermedio (reverse relation)
-    thr = _find_service_through_relation(block)
-    if thr:
-        accessor, Through, service_fk_name = thr
-
-        # validar ids existen usando el modelo remoto del FK
-        ServiceModel = Through._meta.get_field(service_fk_name).remote_field.model
-        qs = list(ServiceModel.objects.filter(id__in=ids))
-        if len(qs) != len(ids):
-            raise ValueError("Uno o más service_ids no existen.")
-
-        mgr = getattr(block, accessor)
-
-        # borramos existentes y recreamos
-        mgr.all().delete()
-
-        # mejor: detectar FK al block por el field que apunta a block.__class__
-        block_fk_name = None
-        for f in Through._meta.fields:
-            if getattr(f, "many_to_one", False):
-                try:
-                    if f.remote_field.model == block.__class__:
-                        block_fk_name = f.name
-                        break
-                except Exception:
-                    continue
-
-        if not block_fk_name:
-            # fallback: intenta "block"
-            block_fk_name = "block"
-
-        def _id_key(name: str) -> str:
-            return name if name.endswith("_id") else f"{name}_id"
-
-        rows = [
-            Through(**{_id_key(block_fk_name): block.id, _id_key(service_fk_name): sid})
-            for sid in ids
-        ]
-        Through.objects.bulk_create(rows)
-
-        return
-
-    # si no encontramos nada, no rompe, pero no hay dónde guardar
-    raise ValueError("No se encontró relación de servicios en AppointmentBlock.")
+        return out
+    # Si llega como string raro, no lo aceptamos silenciosamente
+    raise ValueError("Debe ser lista/tupla de enteros.")
 
 
-# -------------------------
+# ==========================================================
 # API View
-# -------------------------
+# ==========================================================
 class AppointmentInlineEditAPIView(APIView):
     """
     Edición rápida SIN validar disponibilidad (solo STAFF/ADMIN).
 
-    Acepta edición parcial de muchos campos del Appointment de forma defensiva.
+    Este endpoint:
+    - Actualiza start/end del Appointment
+    - Sincroniza start/end en blocks
+    - Puede cambiar BARBER (worker del bloque BARBER) con barber_id/worker_id
+    - Puede cambiar servicios reconstruyendo AppointmentServiceLine (con snapshots NO nulos)
+    - Recalcula recommended_subtotal y recommended_total
 
-    POST/PATCH ejemplo:
+    Payload ejemplo:
     {
-      "start_datetime": "2026-02-20T10:00:00-05:00",   # opcional (o "start")
-      "duration_minutes": 60,                         # opcional
-      "end_datetime": "2026-02-20T11:30:00-05:00",    # opcional (o "end")
-      "status": "Reservado",                          # opcional si tu model lo tiene
-      "note": "opcional",                             # opcional si tu model lo tiene
-      "worker_id": 5,                                 # opcional si tu model lo tiene
-      "service_ids": [1,2,3]                          # opcional si existe appt.services (M2M)
-      ... cualquier otro campo concreto del modelo ...
+      "start_datetime": "2026-02-20T10:00:00-05:00",
+      "duration_minutes": 60,                  # opcional
+      "end_datetime": "2026-02-20T11:00:00-05:00",  # opcional (si no viene y duration sí, se calcula)
+      "barber_id": 5,                          # opcional
+      "service_ids": [1,2,3],                  # opcional (si viene, rearmamos service_lines)
+      "note": "opcional",
+      ...otros campos directos de Appointment...
     }
 
-    Reglas de fechas:
-    - Si llega end(_datetime), se respeta.
-    - Si NO llega end pero llega duration_minutes, se calcula end = start + duration.
-    - Si no llega start, se mantiene el start actual.
+    NOTA:
+    - Tus servicios NO están en M2M de AppointmentBlock; están en AppointmentServiceLine (service_lines).
+    - Por eso SIEMPRE se reconstruyen las líneas con snapshots obligatorios.
     """
 
     def post(self, request, appointment_id: int):
         return self._handle(request, appointment_id)
 
-    # Por si quieres mapear también PATCH en urls.py a este mismo view
     def patch(self, request, appointment_id: int):
         return self._handle(request, appointment_id)
 
@@ -302,41 +215,49 @@ class AppointmentInlineEditAPIView(APIView):
 
         data = request.data or {}
 
-        # Detecta nombres reales de start/end en Appointment y AppointmentBlock
         appt_start_field, appt_end_field = _datetime_field_names_for_model(Appointment)
         block_start_field, block_end_field = _datetime_field_names_for_model(AppointmentBlock)
 
-        duration = data.get("duration_minutes", None)
-        service_ids = data.get("service_ids", None)
-
-        ids_int = None
-        if service_ids is not None:
-            try:
-                # acepta lista o tuplas; si llega string raro cae al except
-                ids_int = [int(x) for x in (service_ids or [])]
-            except Exception:
-                return Response(
-                    {"detail": "service_ids debe ser una lista de enteros."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-
-        # Permite que te manden start/end con cualquiera de los dos nombres
+        # start/end entrantes (alias friendly)
         start_in = data.get(appt_start_field, data.get("start_datetime", data.get("start")))
         end_in = data.get(appt_end_field, data.get("end_datetime", data.get("end")))
 
         new_start_dt = _parse_dt(start_in)
         new_end_dt = _parse_dt(end_in)
 
-        # duration (si viene)
+        # duration
+        duration_raw = data.get("duration_minutes", None)
         duration_int: Optional[int] = None
-        if duration is not None and duration != "":
+        if duration_raw not in (None, ""):
             try:
-                duration_int = int(duration)
+                duration_int = int(duration_raw)
             except Exception:
                 return Response({"detail": "duration_minutes debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
             if duration_int <= 0:
                 return Response({"detail": "duration_minutes debe ser > 0."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # service_ids (puede venir o no)
+        service_ids_present = "service_ids" in data
+        ids_int: Optional[List[int]] = None
+        if service_ids_present:
+            try:
+                ids_int = _to_int_list(data.get("service_ids"))
+            except ValueError as ve:
+                return Response({"detail": f"service_ids inválido: {str(ve)}"}, status=status.HTTP_400_BAD_REQUEST)
+            if not ids_int:
+                return Response({"detail": "Selecciona al menos un servicio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # barber/worker incoming
+        incoming_barber = data.get("barber_id", None)
+        if incoming_barber in (None, ""):
+            incoming_barber = data.get("worker_id", None)
+
+        barber_id_int: Optional[int] = None
+        if incoming_barber not in (None, "", "AUTO"):
+            try:
+                barber_id_int = int(incoming_barber)
+            except Exception:
+                return Response({"detail": "barber_id/worker_id debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             try:
@@ -348,59 +269,57 @@ class AppointmentInlineEditAPIView(APIView):
                 "start": getattr(appt, appt_start_field, None),
                 "end": getattr(appt, appt_end_field, None),
                 "status": getattr(appt, "status", None),
-                "note": getattr(appt, "note", None) if hasattr(appt, "note") else None,
             }
 
-            # Base times actuales
+            # base times actuales
             current_start = getattr(appt, appt_start_field)
             current_end = getattr(appt, appt_end_field)
 
-            # Si no mandan start, mantener el actual
             if new_start_dt is None:
                 new_start_dt = current_start
 
-            # Si mandan end explícito, se respeta; si no, se calcula por duration si viene
             if new_end_dt is None:
                 if duration_int is not None:
                     new_end_dt = new_start_dt + timedelta(minutes=duration_int)
                 else:
                     new_end_dt = current_end
 
-            # Validación mínima de coherencia temporal
             if new_end_dt <= new_start_dt:
-                return Response(
-                    {"detail": "La fecha/hora final debe ser mayor que la inicial."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({"detail": "La fecha/hora final debe ser mayor que la inicial."}, status=status.HTTP_400_BAD_REQUEST)
 
             # ---------
-            # Actualiza campos del Appointment
+            # 1) Actualiza Appointment (campos directos)
             # ---------
             fields = _field_map(Appointment)
             update_fields: List[str] = []
 
-            # 1) Aplica start/end detectados
             setattr(appt, appt_start_field, new_start_dt)
             setattr(appt, appt_end_field, new_end_dt)
             update_fields.extend([appt_start_field, appt_end_field])
 
-            # 2) Aplica otros campos enviados (edición parcial genérica)
-            #    - Ignoramos duration_minutes y service_ids (se manejan aparte)
-            #    - Permitimos setear campos concretos del modelo defensivamente
-            special_keys = {"duration_minutes", "service_ids", "id", "pk"}
+            special_keys = {
+                "duration_minutes",
+                "service_ids",
+                "id",
+                "pk",
+                "start_datetime",
+                "start",
+                "end_datetime",
+                "end",
+                appt_start_field,
+                appt_end_field,
+                "barber_id",
+                "worker_id",
+            }
+
             for key, raw_value in data.items():
                 if key in special_keys:
                     continue
 
-                # Si intentan mandar start/end por alias, ya lo manejamos arriba
-                if key in ("start_datetime", "start", "end_datetime", "end", appt_start_field, appt_end_field):
-                    continue
-
-                # FK: permitir worker_id (o cualquier *_id)
+                # FK por *_id (solo si el field existe en Appointment)
                 if key.endswith("_id") and key[:-3] in fields:
                     fk_field_name = key[:-3]
                     fk_field = fields[fk_field_name]
-                    # solo si es relación many-to-one
                     if getattr(fk_field, "many_to_one", False) or getattr(fk_field, "is_relation", False):
                         try:
                             setattr(appt, key, int(raw_value) if raw_value is not None else None)
@@ -409,11 +328,8 @@ class AppointmentInlineEditAPIView(APIView):
                             return Response({"detail": f"Valor inválido para {key}."}, status=status.HTTP_400_BAD_REQUEST)
                     continue
 
-                # Campo normal (si existe)
                 if key in fields:
                     field = fields[key]
-
-                    # Evita tocar PK / campos automáticos en caliente
                     if getattr(field, "primary_key", False):
                         continue
                     if getattr(field, "auto_now", False) or getattr(field, "auto_now_add", False):
@@ -421,176 +337,177 @@ class AppointmentInlineEditAPIView(APIView):
 
                     coerced = _coerce_value(field, raw_value)
 
-                    # Si tiene choices, valida
                     if getattr(field, "choices", None) and coerced is not None:
                         if not _validate_choice(field, coerced):
-                            return Response(
-                                {"detail": f"Valor inválido para {key}. No está en choices."},
-                                status=status.HTTP_400_BAD_REQUEST
-                            )
+                            return Response({"detail": f"Valor inválido para {key}. No está en choices."}, status=status.HTTP_400_BAD_REQUEST)
 
-                    # Si es DateTimeField, coerción puede devolver None si no parseó
                     if field.get_internal_type() == "DateTimeField" and raw_value is not None and coerced is None:
-                        return Response(
-                            {"detail": f"Formato inválido para {key}. Usa ISO 8601."},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
+                        return Response({"detail": f"Formato inválido para {key}. Usa ISO 8601."}, status=status.HTTP_400_BAD_REQUEST)
 
                     setattr(appt, key, coerced)
                     update_fields.append(key)
 
-            # Guarda Appointment
             appt.save(update_fields=sorted(set(update_fields)))
 
             # ---------
-            # Actualiza bloques asociados (start/end + worker + services)
+            # 2) Cargar blocks actuales (con worker)
             # ---------
             blocks = list(
-                AppointmentBlock.objects.select_for_update().filter(appointment_id=appt.id)
+                AppointmentBlock.objects.select_for_update()
+                .filter(appointment_id=appt.id)
+                .select_related("worker")
+                .order_by("sequence", "id")
             )
 
-            # worker incoming: soporta worker_id o barber_id (frontend)
-            incoming_worker_id = data.get("worker_id", None)
-            if incoming_worker_id in (None, ""):
-                incoming_worker_id = data.get("barber_id", None)
+            # ---------
+            # 3) Si NO vienen service_ids -> solo sync tiempos + (opcional) barber_id a todos los blocks
+            #    Pero tu caso clave es cuando sí vienen service_ids
+            # ---------
+            if ids_int is None:
+                for b in blocks:
+                    setattr(b, block_start_field, new_start_dt)
+                    setattr(b, block_end_field, new_end_dt)
 
-            worker_id_int: Optional[int] = None
-            if incoming_worker_id not in (None, "", "AUTO"):
-                try:
-                    worker_id_int = int(incoming_worker_id)
-                except Exception:
-                    return Response({"detail": "worker_id/barber_id debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
+                    # si mandan barber_id, aplicarlo al bloque BARBER si existe
+                    if barber_id_int is not None and getattr(b.worker, "role", None) == "BARBER":
+                        b.worker_id = barber_id_int
 
-            # services ids (UNA sola vez)
-            ids_int: Optional[List[int]] = None
-            if "service_ids" in data:
-                try:
-                    ids_int = [int(x) for x in (data.get("service_ids") or [])]
-                except Exception:
-                    return Response({"detail": "service_ids debe ser una lista de enteros."}, status=status.HTTP_400_BAD_REQUEST)
-
-            for b in blocks:
-                dirty = set()
-
-                # sync tiempo
-                setattr(b, block_start_field, new_start_dt)
-                setattr(b, block_end_field, new_end_dt)
-                dirty.update([block_start_field, block_end_field])
-
-                # sync worker (si el bloque lo soporta)
-                if worker_id_int is not None:
-                    if hasattr(b, "worker_id"):        # FK "worker"
-                        setattr(b, "worker_id", worker_id_int)
-                        dirty.add("worker")
-                    elif hasattr(b, "barber_id"):      # FK "barber"
-                        setattr(b, "barber_id", worker_id_int)
-                        dirty.add("barber")
-
-                if dirty:
-                    b.save(update_fields=sorted(dirty))
-
-                # sync services: UNA sola llamada y con error controlado (sin 500)
-                if ids_int is not None:
                     try:
-                        _apply_services_to_block(b, ids_int)
-                    except ValueError as ve:
-                        return Response({"detail": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
-                    except Exception as ex:
-                        # si aquí falla, queremos ver el motivo en la respuesta (para depurar)
-                        return Response(
-                            {"detail": f"Error actualizando servicios del bloque: {type(ex).__name__}: {str(ex)}"},
-                            status=status.HTTP_400_BAD_REQUEST
+                        b.save(update_fields=[block_start_field, block_end_field, "worker"])
+                    except Exception:
+                        # si falla por constraint uniq_worker_start_datetime_block u otro
+                        return Response({"detail": "No se pudo actualizar el bloque (conflicto worker/start)."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # ---------
+            # 4) Si vienen service_ids -> reconstruimos blocks por rol + service_lines con snapshots
+            # ---------
+            else:
+                # 4.1 servicios de catálogo
+                svcs = list(CatalogService.objects.filter(id__in=ids_int).select_related("category"))
+                if len(svcs) != len(ids_int):
+                    return Response({"detail": "Uno o más service_ids no existen."}, status=status.HTTP_400_BAD_REQUEST)
+
+                svc_by_id: Dict[int, CatalogService] = {int(s.id): s for s in svcs}
+                svc_role: Dict[int, str] = {int(s.id): _group_for_service(s) for s in svcs}
+                roles_present = set(svc_role.values())  # BARBER/NAILS/FACIAL
+
+                # 4.2 index blocks existentes por rol
+                by_role: Dict[str, AppointmentBlock] = {}
+                for b in blocks:
+                    role = getattr(getattr(b, "worker", None), "role", None)
+                    if role in ("BARBER", "NAILS", "FACIAL") and role not in by_role:
+                        by_role[role] = b
+
+                # 4.3 crear/actualizar blocks requeridos en orden fijo
+                order = ["BARBER", "NAILS", "FACIAL"]
+                kept_blocks: List[AppointmentBlock] = []
+                seq = 1
+
+                for role in order:
+                    if role not in roles_present:
+                        continue
+
+                    existing = by_role.get(role)
+                    current_worker = existing.worker if existing else None
+                    worker = _pick_worker_for_role(
+                        role,
+                        barber_id=barber_id_int if role == "BARBER" else None,
+                        current=current_worker,
+                    )
+
+                    if not worker:
+                        return Response({"detail": f"No existe trabajador configurado para el rol {role}."}, status=status.HTTP_400_BAD_REQUEST)
+
+                    if existing:
+                        existing.sequence = seq
+                        existing.worker = worker
+                        setattr(existing, block_start_field, new_start_dt)
+                        setattr(existing, block_end_field, new_end_dt)
+                        try:
+                            existing.save(update_fields=["sequence", "worker", block_start_field, block_end_field])
+                        except IntegrityError as ie:
+                            return Response({"detail": f"Conflicto de bloque (worker/start): {str(ie)}"}, status=status.HTTP_400_BAD_REQUEST)
+                        kept_blocks.append(existing)
+                    else:
+                        try:
+                            nb = AppointmentBlock.objects.create(
+                                appointment=appt,
+                                sequence=seq,
+                                worker=worker,
+                                start_datetime=new_start_dt,
+                                end_datetime=new_end_dt,
+                            )
+                        except IntegrityError as ie:
+                            return Response({"detail": f"Conflicto creando bloque (worker/start): {str(ie)}"}, status=status.HTTP_400_BAD_REQUEST)
+                        kept_blocks.append(nb)
+
+                    seq += 1
+
+                # 4.4 eliminar blocks que ya no aplican (roles no presentes)
+                for b in blocks:
+                    role = getattr(getattr(b, "worker", None), "role", None)
+                    if role in ("BARBER", "NAILS", "FACIAL") and role not in roles_present:
+                        b.delete()
+
+                # 4.5 reconstruir service_lines (con snapshots NO nulos)
+                subtotal = Decimal("0")
+
+                for b in kept_blocks:
+                    role = getattr(b.worker, "role", None)
+
+                    # ids de este rol (respetar el orden recibido)
+                    role_ids = [int(sid) for sid in ids_int if svc_role.get(int(sid)) == role]
+
+                    # borrar anteriores
+                    AppointmentServiceLine.objects.filter(appointment_block=b).delete()
+
+                    lines: List[AppointmentServiceLine] = []
+                    for sid in role_ids:
+                        svc = svc_by_id[int(sid)]
+
+                        duration = int(getattr(svc, "duration_minutes", 0) or 0)
+                        buf_before = int(getattr(svc, "buffer_before_minutes", 0) or 0)
+                        buf_after = int(getattr(svc, "buffer_after_minutes", 0) or 0)
+                        price = Decimal(str(getattr(svc, "price", 0) or 0))
+
+                        # OJO: duration_minutes_snapshot es NOT NULL -> siempre mandamos int
+                        lines.append(
+                            AppointmentServiceLine(
+                                appointment_block=b,
+                                service=svc,
+                                service_name_snapshot=str(getattr(svc, "name", "") or ""),
+                                duration_minutes_snapshot=duration,
+                                buffer_before_snapshot=buf_before,
+                                buffer_after_snapshot=buf_after,
+                                price_snapshot=price,
+                            )
                         )
 
-            # worker incoming: soporta worker_id o barber_id (frontend)
-            incoming_worker_id = data.get("worker_id", None)
-            if incoming_worker_id is None or incoming_worker_id == "":
-                incoming_worker_id = data.get("barber_id", None)
+                        subtotal += price
 
-            # normaliza worker id
-            worker_id_int: Optional[int] = None
-            if incoming_worker_id is not None and incoming_worker_id != "" and incoming_worker_id != "AUTO":
-                try:
-                    worker_id_int = int(incoming_worker_id)
-                except Exception:
-                    return Response({"detail": "worker_id/barber_id debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
+                    # si por alguna razón un rol queda sin líneas, igual no debería romper
+                    if lines:
+                        try:
+                            AppointmentServiceLine.objects.bulk_create(lines)
+                        except Exception as ex:
+                            return Response(
+                                {"detail": f"Error actualizando servicios del bloque: {type(ex).__name__}: {str(ex)}"},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
 
-            # services para setear en blocks (si aplica)
-            services_for_set = None
-            ids_int: List[int] = []
-            if service_ids is not None:
-                try:
-                    ids_int = [int(x) for x in (service_ids or [])]
-                except Exception:
-                    return Response({"detail": "service_ids debe ser una lista de enteros."}, status=status.HTTP_400_BAD_REQUEST)
-
-                # Preferimos el model desde el M2M real que se vaya a usar
-                # 1) si block tiene services (lo más probable en tu UI)
-                if blocks and hasattr(blocks[0], "services"):
-                    ServiceModel = blocks[0].services.model
-                    services_for_set = list(ServiceModel.objects.filter(id__in=ids_int))
-                    if len(services_for_set) != len(ids_int):
-                        return Response({"detail": "Uno o más service_ids no existen."}, status=status.HTTP_400_BAD_REQUEST)
-                # 2) fallback: si appointment tiene services
-                elif hasattr(appt, "services"):
-                    ServiceModel = appt.services.model
-                    services_for_set = list(ServiceModel.objects.filter(id__in=ids_int))
-                    if len(services_for_set) != len(ids_int):
-                        return Response({"detail": "Uno o más service_ids no existen."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # ahora aplicamos cambios por bloque
-            for b in blocks:
-                dirty = set()
-
-                # sync tiempo
-                setattr(b, block_start_field, new_start_dt)
-                setattr(b, block_end_field, new_end_dt)
-                dirty.update([block_start_field, block_end_field])
-
-                # sync worker (si el bloque lo soporta)
-                if worker_id_int is not None:
-                    # soporta FK típico "worker"
-                    if hasattr(b, "worker_id"):
-                        setattr(b, "worker_id", worker_id_int)
-                        dirty.add("worker")
-                    # soporta "barber_id" si tu bloque lo tuviera
-                    elif hasattr(b, "barber_id"):
-                        setattr(b, "barber_id", worker_id_int)
-                        dirty.add("barber")
-
-                # sync services en el bloque (si existe)
-                if service_ids is not None:
-                    try:
-                        _apply_services_to_block(b, ids_int)
-                    except ValueError as ve:
-                        return Response({"detail": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
-                    except Exception:
-                        # si hay restricciones raras no tumbamos todo
-                        pass
-
-                if dirty:
-                    # update_fields debe llevar NOMBRES DE CAMPOS del modelo (no *_id)
-                    # Para FK agregamos "worker"/"barber" arriba.
-                    b.save(update_fields=sorted(dirty))
+                # 4.6 actualizar totales recomendados
+                appt.recommended_subtotal = subtotal
+                disc = appt.recommended_discount or Decimal("0")
+                appt.recommended_total = max(subtotal - disc, Decimal("0"))
+                appt.save(update_fields=["recommended_subtotal", "recommended_total"])
 
             # ---------
-            # M2M services a nivel Appointment (opcional)
-            # ---------
-            if services_for_set is not None and hasattr(appt, "services"):
-                try:
-                    appt.services.set(services_for_set)
-                except Exception:
-                    pass
-
-
-            # ---------
-            # Audit (si existe)
+            # 5) Audit (si existe)
             # ---------
             after_snapshot = {
                 "start": getattr(appt, appt_start_field, None),
                 "end": getattr(appt, appt_end_field, None),
                 "status": getattr(appt, "status", None),
-                "note": getattr(appt, "note", None) if hasattr(appt, "note") else None,
             }
 
             if AppointmentAudit is not None:
@@ -600,12 +517,12 @@ class AppointmentInlineEditAPIView(APIView):
                         action="INLINE_EDIT",
                         performed_by=user,
                         performed_at=timezone.now(),
-                        note=f"before={before_snapshot} | after={after_snapshot}",
+                        reason=data.get("note") or data.get("reason") or None,
+                        detail_json={"before": before_snapshot, "after": after_snapshot},
                     )
                 except Exception:
                     pass
 
-            # Respuesta uniforme (siempre devuelve start/end en keys estándar)
             return Response(
                 {
                     "id": appt.id,
@@ -615,5 +532,5 @@ class AppointmentInlineEditAPIView(APIView):
                     "updated_fields": sorted(set(update_fields)),
                     "detail": "Edición aplicada (sin validar disponibilidad).",
                 },
-                status=status.HTTP_200_OK
+                status=status.HTTP_200_OK,
             )
